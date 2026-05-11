@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Package, X, Trash2, Layers, Globe, ExternalLink, Camera, Plus, Check, RefreshCw, Search, ChevronDown, Truck, Info, Upload, Link as LinkIcon, Star, Maximize2, Type, AlignLeft, AlignCenter, AlignRight, Bold, Italic, Underline, Image as ImageIcon, Link as LucideLink, Eraser, Zap, FileText, FileSpreadsheet, Compass, FileCode } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { CATEGORIES, SUBCATEGORIES } from "./data";
-import { GoogleGenAI, Type as GenAIType } from "@google/genai";
+import { GoogleGenAI } from "@google/generative-ai";
 import { toProperCase } from "./utils";
 import { Sparkles, Loader2 as LoaderIcon } from "lucide-react";
 
@@ -523,7 +523,8 @@ export const AdminSingleProduct = ({ onBack, onSave, onDelete, initialData, exis
       if (!apiKey || apiKey === 'undefined' || apiKey === '' || apiKey === 'MY_GEMINI_API_KEY' || apiKey === 'INSERISCI_QUI_LA_TUA_CHIAVE_API') {
         throw new Error("API_KEY_MISSING");
       }
-      const genAI = new GoogleGenAI({ apiKey });
+      const genAI = new GoogleGenAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
       const prompt = `Sei un esperto SEO per marketplace. Crea un titolo ottimizzato e una descrizione persuasiva per il marketplace ${marketplace} per questo prodotto:
 Nome Master: ${title}
@@ -540,13 +541,13 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
       let success = false;
       for (const modelName of modelsToTry) {
         try {
-          const response = await genAI.models.generateContent({
-            model: modelName,
-            contents: prompt,
-          });
+          // Update model if trying different one
+          const currentModel = modelName === "gemini-1.5-flash" ? model : genAI.getGenerativeModel({ model: modelName });
+          const result = await currentModel.generateContent(prompt);
+          const response = await result.response;
 
-          if (response && response.text) {
-            const text = response.text.trim();
+          const text = response.text().trim();
+          if (text) {
             const cleanJson = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
             const parsed = JSON.parse(cleanJson);
 
