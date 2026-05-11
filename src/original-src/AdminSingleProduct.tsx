@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Package, X, Trash2, Layers, Globe, ExternalLink, Camera, Plus, Check, RefreshCw, Search, ChevronDown, Truck, Info, Upload, Link as LinkIcon, Star, Maximize2, Type, AlignLeft, AlignCenter, AlignRight, Bold, Italic, Underline, Image as ImageIcon, Link as LucideLink, Eraser, Zap, FileText, FileSpreadsheet, Compass, FileCode } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { CATEGORIES, SUBCATEGORIES } from "./data";
-import { GoogleGenAI } from "@google/generative-ai";
+import { GoogleGenAI, Type as GenAIType } from "@google/genai";
 import { toProperCase } from "./utils";
 import { Sparkles, Loader2 as LoaderIcon } from "lucide-react";
 
@@ -541,13 +541,13 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
       let success = false;
       for (const modelName of modelsToTry) {
         try {
-          // Update model if trying different one
-          const currentModel = modelName === "gemini-1.5-flash" ? model : genAI.getGenerativeModel({ model: modelName });
-          const result = await currentModel.generateContent(prompt);
-          const response = await result.response;
+          const response = await genAI.models.generateContent({
+            model: modelName,
+            contents: prompt,
+          });
 
-          const text = response.text().trim();
-          if (text) {
+          if (response && response.text) {
+            const text = response.text.trim();
             const cleanJson = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
             const parsed = JSON.parse(cleanJson);
 

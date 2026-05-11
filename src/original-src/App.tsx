@@ -82,7 +82,7 @@ import {
 } from "lucide-react";
 
 import { motion, AnimatePresence, useScroll, useTransform, useMotionValueEvent, useSpring } from "motion/react";
-import { GoogleGenAI, SchemaType } from "@google/generative-ai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { PRODUCTS, CATEGORIES, SUBCATEGORIES } from "./data";
 import { Product, CartItem } from "./types";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -2834,39 +2834,33 @@ export default function App() {
     setIsAiSuggesting(true);
     try {
       const apiKey = companySettings.customGeminiKey || process.env.GEMINI_API_KEY;
-      const genAI = new GoogleGenAI(apiKey as string);
-      const model = genAI.getGenerativeModel({
+      const ai = new GoogleGenAI({ apiKey: apiKey as string });
+      const response = await ai.models.generateContent({
         model: "gemini-1.5-flash",
-        generationConfig: {
+        contents: `Analizza questi prodotti e suggerisci una struttura gerarchica di categorie e sottocategorie. 
+        Restituisci un oggetto JSON con un array 'categories' (stringhe) e un oggetto 'subcategories' (che mappa i nomi delle categorie ad array di stringhe).
+        Includi solo categorie e sottocategorie rilevanti per i prodotti forniti.
+        Prodotti: ${JSON.stringify(PRODUCTS.map(p => ({ name: p.name, category: p.category, subcategory: p.subcategory })))}`,
+        config: {
           responseMimeType: "application/json",
           responseSchema: {
-            type: SchemaType.OBJECT,
+            type: Type.OBJECT,
             properties: {
               categories: {
-                type: SchemaType.ARRAY,
-                items: { type: SchemaType.STRING }
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
               },
               subcategories: {
-                type: SchemaType.OBJECT,
-                properties: {
-                  // Dynamic keys are tricky in responseSchema, but we can describe it generally
-                }
+                type: Type.OBJECT,
+                properties: {}
               }
             },
             required: ["categories", "subcategories"]
           }
         }
       });
-
-      const prompt = `Analizza questi prodotti e suggerisci una struttura gerarchica di categorie e sottocategorie. 
-        Restituisci un oggetto JSON con un array 'categories' (stringhe) e un oggetto 'subcategories' (che mappa i nomi delle categorie ad array di stringhe).
-        Includi solo categorie e sottocategorie rilevanti per i prodotti forniti.
-        Prodotti: ${JSON.stringify(PRODUCTS.map(p => ({ name: p.name, category: p.category, subcategory: p.subcategory })))}`;
-
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
       
-      const jsonStr = response.text().trim();
+      const jsonStr = response.text.trim();
       const suggestions = JSON.parse(jsonStr);
       
       // Ensure "Tutti" is in categories
