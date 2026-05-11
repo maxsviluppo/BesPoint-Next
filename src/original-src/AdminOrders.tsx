@@ -1176,7 +1176,7 @@ export const AdminOrders = ({
                                     <label className="text-[8px] font-black uppercase text-gray-400 ml-1">Stato Prodotto</label>
                                     <select 
                                       value={itemReturn ? 'reso' : 'sold'}
-                                      readOnly
+                                      disabled
                                       className={`block w-full border-none rounded-lg px-3 py-1.5 text-[9px] font-black uppercase tracking-widest focus:ring-0 cursor-default shadow-sm ${itemReturn ? 'bg-red-500 text-white shadow-red-200' : 'bg-green-500 text-white shadow-green-200'}`}
                                     >
                                       <option value="sold">Venduto</option>

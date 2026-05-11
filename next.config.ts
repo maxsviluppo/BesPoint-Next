@@ -2,17 +2,18 @@ import type { NextConfig } from "next";
 import path from "path";
 
 const nextConfig: NextConfig = {
-  // Allow Next.js to transpile the original Vite source files
-  transpilePackages: [],
+  // Allow Next.js to transpile the original Vite source files and lucide-react
+  transpilePackages: ["lucide-react"],
 
-  // Image optimization: allow picsum and other hosts used in original project
+  // Image optimization: allow remote hosts
   images: {
     remotePatterns: [
-      { protocol: "https", hostname: "picsum.photos" },
-      { protocol: "https", hostname: "images.unsplash.com" },
-      { protocol: "https", hostname: "img.youtube.com" },
-      { protocol: "https", hostname: "www.svgrepo.com" },
+      { protocol: "https", hostname: "**" },
     ],
+  },
+
+  experimental: {
+    optimizePackageImports: ["lucide-react"],
   },
 
   // Expose GA ID and AI Key to the client bundle
