@@ -21,5 +21,6 @@ interface Props {
 }
 
 export function CategoryClient({ categoryName }: Props) {
-  return <BesPointShell />;
+  // Pass categoryName as initialCategory to BesPointShell
+  return <BesPointShell initialCategory={categoryName} />;
 }

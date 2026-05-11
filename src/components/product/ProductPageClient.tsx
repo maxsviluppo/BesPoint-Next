@@ -21,5 +21,6 @@ interface Props {
 }
 
 export function ProductPageClient({ productId }: Props) {
-  return <BesPointShell />;
+  // Pass productId as initialProductId to BesPointShell
+  return <BesPointShell initialProductId={productId} />;
 }

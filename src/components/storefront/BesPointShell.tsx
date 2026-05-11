@@ -3,17 +3,25 @@
 /**
  * BesPointShell — the true client-side entry point.
  * This file runs ONLY in the browser (loaded via ssr: false from HomeClient).
- * It safely imports AppProvider and the legacy app code.
+ * It correctly passes initial state to StorefrontShell.
  */
 
 import React from 'react';
 import { AppProvider } from '@/context/AppProvider';
-import { BespointApp } from '@/components/storefront/BespointApp';
+import { StorefrontShell } from '@/components/storefront/StorefrontShell';
 
-export default function BesPointShell() {
+interface Props {
+  initialCategory?: string;
+  initialProductId?: string;
+}
+
+export default function BesPointShell({ initialCategory, initialProductId }: Props) {
   return (
     <AppProvider>
-      <BespointApp />
+      <StorefrontShell 
+        initialCategory={initialCategory} 
+        initialProductId={initialProductId} 
+      />
     </AppProvider>
   );
 }
