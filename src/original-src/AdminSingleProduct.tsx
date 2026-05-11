@@ -500,14 +500,26 @@ export const AdminSingleProduct = ({ onBack, onSave, onDelete, initialData, exis
     const setTitle = marketplace === 'Amazon' ? setAmazonTitle : setEbayTitle;
     const setDesc = marketplace === 'Amazon' ? setAmazonDescription : setEbayDescription;
 
-    const modelsToTry = ['gemini-1.5-flash-latest', 'gemini-3-flash-preview', 'gemini-1.5-flash', 'gemini-pro'];
+    const modelsToTry = ['gemini-1.5-flash'];
     let lastError = null;
 
     setAiError(null);
     setLoader(true);
     
     try {
-      const apiKey = (process.env as any).GEMINI_API_KEY;
+      let apiKey = "";
+      try {
+        const saved = localStorage.getItem('companySettings');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          apiKey = parsed.customGeminiKey || "";
+        }
+      } catch (e) {}
+      
+      if (!apiKey) {
+        apiKey = (process.env as any).GEMINI_API_KEY;
+      }
+
       if (!apiKey || apiKey === 'undefined' || apiKey === '' || apiKey === 'MY_GEMINI_API_KEY' || apiKey === 'INSERISCI_QUI_LA_TUA_CHIAVE_API') {
         throw new Error("API_KEY_MISSING");
       }

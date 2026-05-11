@@ -30,14 +30,19 @@ export default function OriginalAppInner({ onCategorySelect, onProductSelect }: 
   // We dynamically import App.tsx render body and pass props through
   const AppComponent = React.lazy(() =>
     import('@bespoint-src/App').then((mod) => {
-      // App.tsx exports default — we patch its navigate calls via context
       return { default: mod.default };
     })
   );
 
+  // Use the BrowserRouter from our shim (which is aliased to react-router-dom)
+  // to provide the necessary context for the legacy App.
+  const { BrowserRouter } = require('react-router-dom');
+
   return (
     <React.Suspense fallback={null}>
-      <AppComponent />
+      <BrowserRouter>
+        <AppComponent />
+      </BrowserRouter>
     </React.Suspense>
   );
 }

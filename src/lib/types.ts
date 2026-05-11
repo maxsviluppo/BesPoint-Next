@@ -87,6 +87,7 @@ export interface CompanySettings {
   googleAnalyticsId: string;
   googleAnalyticsSnippet: string;
   adsTxtContent: string;
+  customGeminiKey: string;
 }
 
 export interface Review {

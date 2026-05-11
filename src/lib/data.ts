@@ -249,7 +249,8 @@ export const DEFAULT_COMPANY_SETTINGS = {
   googleVerificationTag: "",
   googleAnalyticsId: "",
   googleAnalyticsSnippet: "",
-  adsTxtContent: "google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0"
+  adsTxtContent: "google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0",
+  customGeminiKey: ""
 };
 
 export const DEFAULT_PAGE_SETTINGS = {

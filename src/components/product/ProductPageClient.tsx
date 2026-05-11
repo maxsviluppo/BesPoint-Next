@@ -8,15 +8,11 @@ interface Props {
   productId: string;
 }
 
+/**
+ * ProductPageClient wraps the interactive storefront for a specific product.
+ * Loaded with ssr: false from the parent page.tsx.
+ */
 export function ProductPageClient({ productId }: Props) {
-  const [mounted, setMounted] = React.useState(false);
-  
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) return null;
-
   return (
     <AppProvider>
       <StorefrontShell initialProductId={productId} />

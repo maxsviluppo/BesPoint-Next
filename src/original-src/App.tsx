@@ -2573,7 +2573,8 @@ export default function App() {
       },
       googleVerificationTag: "",
       googleAnalyticsSnippet: "",
-      adsTxtContent: "google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0"
+      adsTxtContent: "google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0",
+      customGeminiKey: ""
     };
   });
 
@@ -2832,9 +2833,10 @@ export default function App() {
   const handleAiSuggest = async () => {
     setIsAiSuggesting(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const apiKey = companySettings.customGeminiKey || process.env.GEMINI_API_KEY;
+      const ai = new GoogleGenAI({ apiKey: apiKey as string });
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-1.5-flash",
         contents: `Analizza questi prodotti e suggerisci una struttura gerarchica di categorie e sottocategorie. 
         Restituisci un oggetto JSON con un array 'categories' (stringhe) e un oggetto 'subcategories' (che mappa i nomi delle categorie ad array di stringhe).
         Includi solo categorie e sottocategorie rilevanti per i prodotti forniti.
@@ -4439,6 +4441,44 @@ export default function App() {
                             className="mt-1 block w-full bg-gray-50 border-gray-200 rounded-xl px-4 py-3 text-base font-bold focus:ring-brand-yellow focus:border-brand-yellow"
                           />
                         </label>
+                      </div>
+                    </div>
+
+                    {/* AI Configuration Section */}
+                    <div className="bg-brand-blue/5 border-2 border-dashed border-brand-blue/20 p-8 rounded-[3rem] space-y-6">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-brand-blue rounded-2xl flex items-center justify-center">
+                          <Zap className="w-6 h-6 text-brand-yellow" />
+                        </div>
+                        <div>
+                          <h4 className="text-xl font-black text-brand-dark uppercase tracking-tighter">Configurazione Intelligenza Artificiale</h4>
+                          <p className="text-[10px] font-black uppercase text-gray-400">Personalizza la chiave API per le funzioni avanzate</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
+                        <div className="space-y-2">
+                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">Gemini API Key (1.5 Flash)</span>
+                          <input 
+                            type="password"
+                            placeholder="Incolla qui la tua chiave..."
+                            value={companySettings.customGeminiKey || ''}
+                            onChange={(e) => setCompanySettings({...companySettings, customGeminiKey: e.target.value})}
+                            className="mt-1 block w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-base font-bold focus:ring-brand-yellow focus:border-brand-yellow shadow-sm"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <p className="text-[10px] text-gray-500 font-bold leading-tight">
+                            * Inserendo la tua chiave, il sistema utilizzerà il modello 1.5 Flash per suggerimenti categorie, SEO e recensioni AI.
+                          </p>
+                          <a 
+                            href="https://aistudio.google.com/app/apikey" 
+                            target="_blank" 
+                            className="text-[10px] font-black text-brand-blue uppercase tracking-widest hover:underline flex items-center gap-1"
+                          >
+                            Ottieni una chiave gratuita <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
                       </div>
                     </div>
 

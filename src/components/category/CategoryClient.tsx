@@ -8,15 +8,11 @@ interface Props {
   categoryName: string;
 }
 
+/**
+ * CategoryClient wraps the interactive storefront for a specific category.
+ * Loaded with ssr: false from the parent page.tsx.
+ */
 export function CategoryClient({ categoryName }: Props) {
-  const [mounted, setMounted] = React.useState(false);
-  
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) return null;
-
   return (
     <AppProvider>
       <StorefrontShell initialCategory={categoryName} />
