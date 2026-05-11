@@ -27,7 +27,7 @@ const nextConfig: NextConfig = {
       ...config.resolve.alias,
       "@bespoint-src": path.resolve(
         __dirname,
-        "../bespoint-main/src"
+        "./src/original-src"
       ),
       "react-router-dom": path.resolve(
         __dirname,

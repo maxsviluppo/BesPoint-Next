@@ -20,7 +20,7 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
-      "@bespoint-src/*": ["../bespoint-main/src/*"]
+      "@bespoint-src/*": ["./src/original-src/*"]
     }
   },
   "include": [
@@ -29,9 +29,7 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts",
-    "../bespoint-main/src/**/*.ts",
-    "../bespoint-main/src/**/*.tsx"
+    "**/*.mts"
   ],
   "exclude": ["node_modules"]
 }
