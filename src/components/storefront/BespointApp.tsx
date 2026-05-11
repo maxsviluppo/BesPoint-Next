@@ -1,20 +1,6 @@
 'use client';
 
-/**
- * BespointApp — direct port of the original Vite/React App.tsx render body.
- *
- * Rather than duplicating 8000+ lines, this file:
- * 1. Imports all the original sub-components from the Vite source via the
- *    path alias `@bespoint-src` configured in next.config.ts
- * 2. Provides a thin wrapper that replaces react-router-dom navigation
- *    with the Next.js router callbacks passed from StorefrontShell.
- *
- * The original source files (App.tsx, AdminSingleProduct.tsx, etc.) are NOT
- * modified — they are read-only references.
- */
-
 import dynamic from 'next/dynamic';
-import { Suspense } from 'react';
 
 // Lazy-load the heavy original App to avoid SSR issues
 // (it uses browser APIs like localStorage heavily)
@@ -37,18 +23,6 @@ const OriginalAppInner = dynamic(
   }
 );
 
-interface Props {
-  onCategorySelect: (cat: string) => void;
-  onProductSelect: (p: any | null) => void;
-}
-
-export function BespointApp({ onCategorySelect, onProductSelect }: Props) {
-  return (
-    <Suspense>
-      <OriginalAppInner
-        onCategorySelect={onCategorySelect}
-        onProductSelect={onProductSelect}
-      />
-    </Suspense>
-  );
+export function BespointApp() {
+  return <OriginalAppInner />;
 }

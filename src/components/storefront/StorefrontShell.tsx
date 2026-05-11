@@ -99,10 +99,5 @@ export function StorefrontShell({ initialCategory, initialProductId }: Props) {
     }
   };
 
-  return (
-    <BespointApp
-      onCategorySelect={handleCategorySelect}
-      onProductSelect={handleProductSelect}
-    />
-  );
+  return <BespointApp />;
 }

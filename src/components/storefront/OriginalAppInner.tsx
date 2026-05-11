@@ -1,48 +1,45 @@
 'use client';
 
 // This file bridges the original Vite App.tsx with Next.js.
-// It re-exports the entire original App as-is, replacing only the router.
+// BrowserRouter is imported statically from the router-shim alias.
+// AppComponent is memoised outside the component to avoid re-mounting loops.
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { useApp } from '@/context/AppProvider';
+import React, { Suspense, memo } from 'react';
+// react-router-dom is aliased to src/lib/router-shim.tsx in next.config.ts
+// so BrowserRouter here is actually our no-op shim that satisfies the context.
+import { BrowserRouter } from 'react-router-dom';
 
-// Original sub-components (path alias @bespoint-src → bespoint-main/src)
-// These files are NOT modified.
-import { AdminSingleProduct } from '@bespoint-src/AdminSingleProduct';
-import { AdminMassiveImport } from '@bespoint-src/AdminMassiveImport';
-import { AdminImageLinker } from '@bespoint-src/AdminImageLinker';
-import { AdminOrders, INITIAL_ORDERS } from '@bespoint-src/AdminOrders';
-import { AdminCouriers } from '@bespoint-src/AdminCouriers';
-import { AdminReturns } from '@bespoint-src/AdminReturns';
-import { AdminUsers } from '@bespoint-src/AdminUsers';
-import { AdminReviews } from '@bespoint-src/AdminReviews';
-import { PRODUCTS, CATEGORIES, SUBCATEGORIES } from '@bespoint-src/data';
+// Lazy-import the heavy original App ONCE, outside the component.
+const AppComponent = React.lazy(() =>
+  import('@bespoint-src/App').then((mod) => ({ default: mod.default }))
+);
+
+const Loader = () => (
+  <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="flex flex-col items-center gap-4">
+      <div className="w-16 h-16 bg-brand-yellow rounded-2xl flex items-center justify-center animate-pulse shadow-xl">
+        <span className="text-brand-dark font-black text-2xl italic">B</span>
+      </div>
+      <p className="text-xs font-black uppercase tracking-widest text-gray-400 animate-pulse">
+        Caricamento BesPoint...
+      </p>
+    </div>
+  </div>
+);
 
 interface Props {
-  onCategorySelect: (cat: string) => void;
-  onProductSelect: (p: any | null) => void;
+  onCategorySelect?: (cat: string) => void;
+  onProductSelect?: (p: any | null) => void;
 }
 
-export default function OriginalAppInner({ onCategorySelect, onProductSelect }: Props) {
-  const app = useApp();
-
-  // Mount the original App logic but replace navigate() with Next.js callbacks
-  // We dynamically import App.tsx render body and pass props through
-  const AppComponent = React.lazy(() =>
-    import('@bespoint-src/App').then((mod) => {
-      return { default: mod.default };
-    })
-  );
-
-  // Use the BrowserRouter from our shim (which is aliased to react-router-dom)
-  // to provide the necessary context for the legacy App.
-  const { BrowserRouter } = require('react-router-dom');
-
+function OriginalAppInner({ onCategorySelect, onProductSelect }: Props) {
   return (
-    <React.Suspense fallback={null}>
-      <BrowserRouter>
+    <BrowserRouter>
+      <Suspense fallback={<Loader />}>
         <AppComponent />
-      </BrowserRouter>
-    </React.Suspense>
+      </Suspense>
+    </BrowserRouter>
   );
 }
+
+export default memo(OriginalAppInner);
