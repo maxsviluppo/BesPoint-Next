@@ -16,7 +16,7 @@ import {
   History,
   Tag
 } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence } from "motion";
 import { PRODUCTS } from "./data";
 
 interface Review {

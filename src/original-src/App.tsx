@@ -81,7 +81,7 @@ import {
   Image as ImageIcon
 } from "lucide-react";
 
-import { motion, AnimatePresence, useScroll, useTransform, useMotionValueEvent, useSpring } from "motion/react";
+import { motion, AnimatePresence, useScroll, useTransform, useMotionValueEvent, useSpring } from "motion";
 import { GoogleGenAI, Type } from "@google/genai";
 import { PRODUCTS, CATEGORIES, SUBCATEGORIES } from "./data";
 import { Product, CartItem } from "./types";

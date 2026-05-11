@@ -25,7 +25,7 @@ import {
   TrendingUp,
   AlertCircle
 } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence } from "motion";
 
 interface Customer {
     id: string;

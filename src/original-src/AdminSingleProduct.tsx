@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Package, X, Trash2, Layers, Globe, ExternalLink, Camera, Plus, Check, RefreshCw, Search, ChevronDown, Truck, Info, Upload, Link as LinkIcon, Star, Maximize2, Type, AlignLeft, AlignCenter, AlignRight, Bold, Italic, Underline, Image as ImageIcon, Link as LucideLink, Eraser, Zap, FileText, FileSpreadsheet, Compass, FileCode } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence } from "motion";
 import { CATEGORIES, SUBCATEGORIES } from "./data";
 import { GoogleGenAI, Type as GenAIType } from "@google/genai";
 import { toProperCase } from "./utils";
