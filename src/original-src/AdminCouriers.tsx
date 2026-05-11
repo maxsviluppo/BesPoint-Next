@@ -25,7 +25,7 @@ import {
   Star,
   Box
 } from "lucide-react";
-import { motion, AnimatePresence } from "motion";
+import { motion, AnimatePresence } from "motion/react";
 
 interface CourierApiConfig {
   id: string;

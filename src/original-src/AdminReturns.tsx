@@ -24,7 +24,7 @@ import {
   Activity,
   Image as ImageIcon
 } from "lucide-react";
-import { motion, AnimatePresence } from "motion";
+import { motion, AnimatePresence } from "motion/react";
 
 interface ReturnRequest {
     id: string;

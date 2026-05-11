@@ -5,9 +5,6 @@
 // AppComponent is memoised outside the component to avoid re-mounting loops.
 
 import React, { Suspense, memo } from 'react';
-// react-router-dom is aliased to src/lib/router-shim.tsx in next.config.ts
-// so BrowserRouter here is actually our no-op shim that satisfies the context.
-import { BrowserRouter } from 'react-router-dom';
 
 // Lazy-import the heavy original App ONCE, outside the component.
 const AppComponent = React.lazy(() =>
@@ -34,11 +31,9 @@ interface Props {
 
 function OriginalAppInner({ onCategorySelect, onProductSelect }: Props) {
   return (
-    <BrowserRouter>
-      <Suspense fallback={<Loader />}>
-        <AppComponent />
-      </Suspense>
-    </BrowserRouter>
+    <Suspense fallback={<Loader />}>
+      <AppComponent />
+    </Suspense>
   );
 }
 

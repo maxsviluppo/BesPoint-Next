@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Package, X, Trash2, Layers, Globe, ExternalLink, Camera, Plus, Check, RefreshCw, Search, ChevronDown, Truck, Info, Upload, Link as LinkIcon, Star, Maximize2, Type, AlignLeft, AlignCenter, AlignRight, Bold, Italic, Underline, Image as ImageIcon, Link as LucideLink, Eraser, Zap, FileText, FileSpreadsheet, Compass, FileCode } from "lucide-react";
-import { motion, AnimatePresence } from "motion";
+import { motion, AnimatePresence } from "motion/react";
 import { CATEGORIES, SUBCATEGORIES } from "./data";
 import { GoogleGenAI, Type as GenAIType } from "@google/genai";
 import { toProperCase } from "./utils";
@@ -523,8 +523,8 @@ export const AdminSingleProduct = ({ onBack, onSave, onDelete, initialData, exis
       if (!apiKey || apiKey === 'undefined' || apiKey === '' || apiKey === 'MY_GEMINI_API_KEY' || apiKey === 'INSERISCI_QUI_LA_TUA_CHIAVE_API') {
         throw new Error("API_KEY_MISSING");
       }
-      const genAI = new GoogleGenAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const genAI = new GoogleGenAI({ apiKey });
+      const model = "gemini-1.5-flash";
 
       const prompt = `Sei un esperto SEO per marketplace. Crea un titolo ottimizzato e una descrizione persuasiva per il marketplace ${marketplace} per questo prodotto:
 Nome Master: ${title}

@@ -30,7 +30,7 @@ import {
   RefreshCw,
   Layers
 } from "lucide-react";
-import { motion, AnimatePresence } from "motion";
+import { motion, AnimatePresence } from "motion/react";
 
 const COURIERS = [
   { id: 'gls', name: 'GLS Italy', logo: 'gls' },
