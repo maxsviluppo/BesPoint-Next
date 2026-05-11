@@ -1,12 +1,9 @@
 'use client';
 
-import React from 'react';
 import dynamic from 'next/dynamic';
-import { AppProvider } from '@/context/AppProvider';
 
-// Move dynamic import HERE
-const StorefrontShell = dynamic(
-  () => import('@/components/storefront/StorefrontShell').then(mod => mod.StorefrontShell),
+const BesPointShell = dynamic(
+  () => import('@/components/storefront/BesPointShell'),
   {
     ssr: false,
     loading: () => (
@@ -23,14 +20,6 @@ interface Props {
   productId: string;
 }
 
-/**
- * ProductPageClient wraps the interactive storefront for a specific product.
- * This is a 'use client' boundary.
- */
 export function ProductPageClient({ productId }: Props) {
-  return (
-    <AppProvider>
-      <StorefrontShell initialProductId={productId} />
-    </AppProvider>
-  );
+  return <BesPointShell />;
 }

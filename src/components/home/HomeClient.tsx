@@ -1,32 +1,32 @@
 'use client';
 
-import React from 'react';
-import dynamic from 'next/dynamic';
-import { AppProvider } from '@/context/AppProvider';
+/**
+ * HomeClient — thin client boundary.
+ * Everything below this is loaded ONLY in the browser (ssr: false).
+ * This prevents any server-side crash from the legacy BesPoint codebase.
+ */
 
-// Move the dynamic import with ssr: false HERE (Client Component)
-const StorefrontShell = dynamic(
-  () => import('@/components/storefront/StorefrontShell').then(mod => mod.StorefrontShell),
+import dynamic from 'next/dynamic';
+
+const BesPointShell = dynamic(
+  () => import('@/components/storefront/BesPointShell'),
   {
     ssr: false,
     loading: () => (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="w-16 h-16 bg-brand-yellow rounded-2xl flex items-center justify-center animate-pulse">
-          <span className="text-brand-dark font-black text-2xl italic">B</span>
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-16 h-16 bg-brand-yellow rounded-2xl flex items-center justify-center animate-pulse shadow-xl">
+            <span className="text-brand-dark font-black text-2xl italic">B</span>
+          </div>
+          <p className="text-xs font-black uppercase tracking-widest text-gray-400 animate-pulse">
+            Caricamento BesPoint...
+          </p>
         </div>
       </div>
-    )
+    ),
   }
 );
 
-/**
- * HomeClient wraps the entire interactive storefront with the AppProvider.
- * This is a 'use client' boundary.
- */
 export function HomeClient() {
-  return (
-    <AppProvider>
-      <StorefrontShell />
-    </AppProvider>
-  );
+  return <BesPointShell />;
 }
