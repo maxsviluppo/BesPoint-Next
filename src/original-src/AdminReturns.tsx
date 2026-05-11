@@ -318,7 +318,8 @@ export const AdminReturns = ({ returns, setReturns, initialSelectedId }: AdminRe
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar text-black">
-                                {/* Problem Summary *                                 <div className="bg-red-50 p-6 rounded-[2rem] border-2 border-red-100">
+                                {/* Problem Summary */}
+                                <div className="bg-red-50 p-6 rounded-[2rem] border-2 border-red-100">
                                     <div className="flex gap-4">
                                         <div className="p-4 bg-red-500 text-white rounded-2xl h-fit">
                                             <AlertTriangle className="w-6 h-6" />
@@ -344,7 +345,6 @@ export const AdminReturns = ({ returns, setReturns, initialSelectedId }: AdminRe
                                         </div>
                                     </div>
                                 </div>
-v>
 
                                 {/* Order & Product Context */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-black">

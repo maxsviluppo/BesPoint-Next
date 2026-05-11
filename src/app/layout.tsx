@@ -1,65 +1,47 @@
-import type { Metadata } from "next";
-import Script from "next/script";
+import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import Script from "next/script";
+import { StorefrontLauncher } from '@/components/storefront/StorefrontLauncher';
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+export const viewport: Viewport = {
+  themeColor: "#ffd600",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.bespoint.it"),
   title: {
-    default: "BesPoint — Illuminazione, Sicurezza, Bricolage, Giardinaggio ed Elettronica",
+    default: "BesPoint — Store Online Illuminazione e Sicurezza",
     template: "%s | BesPoint",
   },
-  description:
-    "BesPoint è il tuo negozio online di fiducia per Illuminazione, Sicurezza, Bricolage, Giardinaggio ed Elettronica. Qualità, risparmio e spedizione veloce.",
-  keywords: [
-    "illuminazione LED",
-    "sicurezza casa",
-    "bricolage",
-    "giardinaggio",
-    "elettronica",
-    "BesPoint",
-    "negozio online",
-    "antifurto",
-    "smart home",
-  ],
-  openGraph: {
-    type: "website",
-    locale: "it_IT",
-    url: "https://www.bespoint.it",
-    siteName: "BesPoint",
-    title: "BesPoint — Illuminazione, Sicurezza, Bricolage, Giardinaggio ed Elettronica",
-    description:
-      "BesPoint è il tuo negozio online di fiducia. Scopri i migliori prodotti per la casa e il giardino.",
-    images: [
-      {
-        url: "/og-image.jpg",
-        width: 1200,
-        height: 630,
-        alt: "BesPoint Store",
-      },
-    ],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "BesPoint — Illuminazione, Sicurezza, Bricolage",
-    description: "Il tuo negozio online di fiducia per la casa.",
-  },
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-      "max-video-preview": -1,
-      "max-image-preview": "large",
-      "max-snippet": -1,
-    },
-  },
+  description: "Il punto di riferimento per l'illuminazione LED e la sicurezza domestica in Italia.",
+  manifest: "/manifest.json",
   icons: {
     icon: "/favicon.ico",
     apple: "/apple-touch-icon.png",
   },
   verification: {
-    // google: "INSERISCI_QUI_IL_TUO_CODICE_VERIFICA_GOOGLE",
+    google: "process.env.NEXT_PUBLIC_GOOGLE_VERIFICATION",
+  },
+  alternates: {
+    canonical: "/",
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 
@@ -71,7 +53,7 @@ export default function RootLayout({
   const gaId = process.env.NEXT_PUBLIC_GA_ID;
 
   return (
-    <html lang="it" suppressHydrationWarning>
+    <html lang="it" suppressHydrationWarning={true}>
       <head>
         {/* Google Analytics */}
         {gaId && (
@@ -111,6 +93,7 @@ export default function RootLayout({
               "https://facebook.com/bespoint",
               "https://instagram.com/bespoint",
               "https://twitter.com/bespoint",
+              "https://twitter.com/bespoint",
             ],
           })}
         </Script>
@@ -132,7 +115,11 @@ export default function RootLayout({
           })}
         </Script>
       </head>
-      <body className="antialiased">{children}</body>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <StorefrontLauncher>
+          {children}
+        </StorefrontLauncher>
+      </body>
     </html>
   );
 }

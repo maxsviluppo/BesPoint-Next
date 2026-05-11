@@ -12,7 +12,9 @@ import {
   ChevronRight, 
   ChevronLeft,
   ChevronDown,
+  ChevronUp,
   ArrowLeft,
+  ArrowRight,
   Home,
   Grid,
   User,
@@ -47,6 +49,8 @@ import {
   Table,
   FileText,
   FileCode,
+  Tag,
+  CreditCard,
   Truck,
   ListFilter,
   LayoutGrid,
@@ -66,22 +70,35 @@ import {
   ClipboardCheck,
   Activity,
   Repeat,
-  UserPlus
+  UserPlus,
+  CheckCircle2,
+  XCircle,
+  LayoutDashboard,
+  AlertTriangle,
+  Zap,
+  Eye,
+  EyeOff,
+  Image as ImageIcon
 } from "lucide-react";
+
 import { motion, AnimatePresence, useScroll, useTransform, useMotionValueEvent, useSpring } from "motion/react";
 import { GoogleGenAI, Type } from "@google/genai";
 import { PRODUCTS, CATEGORIES, SUBCATEGORIES } from "./data";
 import { Product, CartItem } from "./types";
+import { useNavigate, useLocation } from "react-router-dom";
 import { AdminSingleProduct } from "./AdminSingleProduct";
 import { AdminMassiveImport } from "./AdminMassiveImport";
-import { AdminOrders } from "./AdminOrders";
+import { AdminImageLinker } from "./AdminImageLinker";
+import { AdminOrders, INITIAL_ORDERS } from "./AdminOrders";
 import { AdminCouriers } from "./AdminCouriers";
 import { AdminReturns } from "./AdminReturns";
 import { AdminUsers } from "./AdminUsers";
+import { AdminReviews } from "./AdminReviews";
+import { useApp } from "@/context/AppProvider";
 
 // --- Components ---
 
-const CartSplash = ({ trigger, isMenuHidden, count }: { trigger: number; isMenuHidden: boolean; count: number; key?: string }) => {
+const CartSplash = ({ trigger, isMenuHidden, count }: { trigger: number; isMenuHidden: boolean; count: number; key?: any }) => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -167,7 +184,143 @@ const CartSplash = ({ trigger, isMenuHidden, count }: { trigger: number; isMenuH
   );
 };
 
-function ProductCard({ product, onClick, onAddToCart, index }: { product: Product; onClick: () => void; onAddToCart: (p: Product) => void; index: number }) {
+const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 'error' | 'info', onClose: () => void, key?: any }) => {
+  const icons = {
+    success: <CheckCircle2 className="w-5 h-5 text-green-500" />,
+    error: <XCircle className="w-5 h-5 text-red-500" />,
+    info: <Activity className="w-5 h-5 text-blue-500" />
+  };
+
+  const bgColors = {
+    success: 'bg-white border-green-100 shadow-[0_10px_40px_rgba(34,197,94,0.1)]',
+    error: 'bg-white border-red-100 shadow-[0_10px_40px_rgba(239,68,68,0.1)]',
+    info: 'bg-white border-blue-100 shadow-[0_10px_40px_rgba(59,130,246,0.1)]'
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 50, scale: 0.9 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+      className={`${bgColors[type]} border p-4 rounded-3xl flex items-center gap-4 min-w-[320px] pointer-events-auto backdrop-blur-xl bg-white/90 shadow-2xl`}
+    >
+      <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${type === 'success' ? 'bg-green-50' : type === 'error' ? 'bg-red-50' : 'bg-blue-50'}`}>
+        {icons[type]}
+      </div>
+      <p className="text-[13px] font-bold text-brand-dark flex-1 leading-tight">{message}</p>
+      <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-xl transition-all">
+        <X className="w-4 h-4 text-gray-400" />
+      </button>
+    </motion.div>
+  );
+};
+
+const ToastContainer = ({ toasts, onClose }: { toasts: { id: string; message: string; type: 'success' | 'error' | 'info' }[], onClose: (id: string) => void }) => {
+  return (
+    <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[9999] flex flex-col items-center gap-3 pointer-events-none w-full max-w-sm px-6">
+      <AnimatePresence mode="popLayout">
+        {toasts.map(toast => (
+          <Toast 
+            key={toast.id} 
+            message={toast.message} 
+            type={toast.type} 
+            onClose={() => onClose(toast.id)} 
+          />
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+const PdfViewerModal = ({ url, title, onClose }: { url: string; title: string; onClose: () => void }) => {
+  const [blobUrl, setBlobUrl] = useState<string>("");
+
+  useEffect(() => {
+    if (url && url.startsWith('data:application/pdf')) {
+      // Convert DataURL to Blob for better iframe performance/stability
+      const fetchBlob = async () => {
+        try {
+          const response = await fetch(url);
+          const blob = await response.blob();
+          const bUrl = URL.createObjectURL(blob);
+          setBlobUrl(bUrl);
+        } catch (err) {
+          console.error("Error creating PDF blob:", err);
+          setBlobUrl(url); // Fallback
+        }
+      };
+      fetchBlob();
+    } else {
+      setBlobUrl(url);
+    }
+
+    return () => {
+      if (blobUrl && blobUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(blobUrl);
+      }
+    };
+  }, [url]);
+
+  return (
+    <AnimatePresence>
+      {url && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1000]"
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            className="fixed inset-4 md:inset-10 bg-white rounded-[2.5rem] shadow-2xl z-[1001] overflow-hidden flex flex-col"
+          >
+            <div className="flex items-center justify-between p-6 border-b border-gray-100 bg-white/80 backdrop-blur-xl">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-brand-blue/10 rounded-2xl flex items-center justify-center">
+                  <FileText className="w-6 h-6 text-brand-blue" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-brand-dark uppercase tracking-widest">{title}</h3>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Visualizzazione Documento Sicura</p>
+                </div>
+              </div>
+              <button 
+                onClick={onClose}
+                className="w-12 h-12 flex items-center justify-center bg-gray-100 hover:bg-red-500 hover:text-white rounded-2xl transition-all active:scale-90"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="flex-1 bg-gray-50 relative">
+              <iframe 
+                src={blobUrl} 
+                className="w-full h-full border-none"
+                title={title}
+              />
+            </div>
+            <div className="p-4 bg-white border-t border-gray-100 flex justify-center">
+              <p className="text-[9px] font-black text-gray-300 uppercase tracking-[0.3em]">BesPoint Document Viewer — Protected Content</p>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
+function ProductCard({ product, onClick, onAddToCart, index, reviews = [], isFavorite = false, onToggleFavorite, onShare }: { product: Product; onClick: () => void; onAddToCart: (p: Product) => void; index: number; reviews?: any[]; isFavorite?: boolean; onToggleFavorite?: (id: string) => void; onShare?: (p: Product) => void; key?: any }) {
+  const productReviews = reviews.filter(r => r.productId === product.id && r.status === 'approved');
+  const avgRating = productReviews.length > 0 
+    ? productReviews.reduce((s, r) => s + r.rating, 0) / productReviews.length 
+    : product.rating;
+  const reviewCount = productReviews.length > 0 
+    ? productReviews.length + product.reviews 
+    : product.reviews;
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20, scale: 0.95 }}
@@ -175,29 +328,48 @@ function ProductCard({ product, onClick, onAddToCart, index }: { product: Produc
       viewport={{ once: true, margin: "-50px" }}
       transition={{ 
         duration: 0.5, 
-        delay: (index % 4) * 0.1,
+        delay: index * 0.05,
         ease: [0.21, 1.02, 0.73, 1]
       }}
       whileHover={{ y: -5, transition: { duration: 0.2 } }}
       layoutId={`product-${product.id}`}
-      className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col h-full hover:shadow-xl transition-shadow duration-300"
+      onClick={onClick}
+      className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col h-full hover:shadow-xl transition-shadow duration-300 relative group cursor-pointer"
     >
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: (index % 4) * 0.1 + 0.2 }}
-        onClick={onClick}
-        className="aspect-square mb-3 cursor-pointer overflow-hidden rounded-lg bg-gray-50"
-      >
-        {product.image && (
-          <img src={product.image} alt={product.name} className="w-full h-full object-cover hover:scale-105 transition-transform" referrerPolicy="no-referrer" />
-        )}
-      </motion.div>
+        <div className="relative w-full aspect-square mb-3 overflow-hidden rounded-xl bg-gray-50 border border-gray-100 flex-shrink-0">
+          {product.image && (
+            <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" referrerPolicy="no-referrer" />
+          )}
+          <div className="absolute top-2 left-2 flex flex-col gap-2 z-10">
+            <button 
+              onClick={(e) => { e.stopPropagation(); onToggleFavorite?.(product.id); }}
+              className={`transition-all hover:scale-110 active:scale-90 ${isFavorite ? "text-red-500 drop-shadow-sm" : "text-white/60 hover:text-red-500 drop-shadow-sm"}`}
+              title="Aggiungi ai preferiti"
+            >
+              <Heart className={`w-4 h-4 ${isFavorite ? "fill-current" : ""}`} />
+            </button>
+            <button 
+              onClick={(e) => { e.stopPropagation(); onShare?.(product); }}
+              className="text-white/60 hover:text-sky-400 transition-all hover:scale-110 active:scale-90 drop-shadow-sm"
+              title="Condividi prodotto"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      {product.brand && (
+        <motion.p 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="text-[10px] font-black text-brand-yellow uppercase tracking-widest mb-0.5"
+        >
+          {product.brand}
+        </motion.p>
+      )}
       <motion.h3 
         initial={{ opacity: 0, x: -10 }}
         animate={{ opacity: 1, x: 0 }}
-        transition={{ delay: (index % 4) * 0.1 + 0.3 }}
-        onClick={onClick}
+        transition={{ delay: index * 0.05 + 0.3 }}
         className="text-sm font-medium text-brand-dark line-clamp-2 mb-1 cursor-pointer hover:text-brand-yellow"
       >
         {product.name}
@@ -205,32 +377,32 @@ function ProductCard({ product, onClick, onAddToCart, index }: { product: Produc
       <motion.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: (index % 4) * 0.1 + 0.4 }}
+        transition={{ delay: index * 0.05 + 0.4 }}
         className="flex items-center gap-1 mb-2"
       >
         <div className="flex">
           {[...Array(5)].map((_, i) => (
-            <Star key={`card-star-${i}`} className={`w-3 h-3 ${i < Math.floor(product.rating) ? "text-brand-yellow fill-brand-yellow" : "text-gray-200"}`} />
+            <Star key={`card-star-${i}`} className={`w-3 h-3 ${i < Math.floor(avgRating) ? "text-brand-yellow fill-brand-yellow" : "text-gray-200"}`} />
           ))}
         </div>
-        <span className="text-[10px] text-blue-600 font-medium">{product.reviews}</span>
+        <span className="text-[10px] text-blue-600 font-medium">{reviewCount}</span>
       </motion.div>
       <div className="mt-auto">
         <motion.div 
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: (index % 4) * 0.1 + 0.5 }}
+          transition={{ delay: index * 0.05 + 0.5 }}
           className="flex items-baseline gap-1 mb-3"
         >
           <span className="text-xs font-bold align-top">€</span>
-          <span className="text-xl font-bold">{Math.floor(product.price)}</span>
-          <span className="text-xs font-bold">{(product.price % 1).toFixed(2).substring(2)}</span>
+          <span className="text-xl font-bold">{Math.floor(product.price || 0)}</span>
+          <span className="text-xs font-bold">{((product.price || 0) % 1).toFixed(2).substring(2)}</span>
         </motion.div>
         <motion.button 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: (index % 4) * 0.1 + 0.6 }}
-          onClick={() => onAddToCart(product)}
+          transition={{ delay: index * 0.05 + 0.6 }}
+          onClick={(e) => { e.stopPropagation(); onAddToCart(product); }}
           className="w-full bg-brand-yellow hover:bg-brand-orange text-brand-dark py-2 rounded-lg text-xs font-bold shadow-sm active:scale-95 transition-all"
         >
           Aggiungi al carrello
@@ -240,12 +412,108 @@ function ProductCard({ product, onClick, onAddToCart, index }: { product: Produc
   );
 }
 
-const ProductSheet = ({ product, onClose, onAddToCart, isDesktop }: { product: Product; onClose: () => void; onAddToCart: (p: Product) => void; isDesktop: boolean; key?: string }) => {
+function MiniProductCard({ product, onClick, onRemove, index, isCarousel = false }: { product: Product; onClick: () => void; onRemove: (id: string) => void; index: number; isCarousel?: boolean; key?: any }) {
+  return (
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.9, y: 10 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ delay: index * 0.05, type: "spring", damping: 15 }}
+      whileHover={{ y: -5, transition: { duration: 0.2 } }}
+      onClick={onClick}
+      className={`bg-white p-2.5 rounded-[1.5rem] border border-gray-100 flex flex-col h-full shadow-sm group relative hover:shadow-xl transition-all cursor-pointer ${isCarousel ? 'w-42 flex-shrink-0' : 'w-full'}`}
+    >
+      <button 
+        onClick={(e) => { e.stopPropagation(); onRemove(product.id); }}
+        className="absolute top-2 right-2 w-7 h-7 bg-white/90 backdrop-blur-md text-red-500 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-10 shadow-lg border border-red-50 hover:bg-red-500 hover:text-white"
+      >
+        <Heart className="w-3.5 h-3.5 fill-current" />
+      </button>
+      <div 
+        onClick={onClick}
+        className="w-full aspect-square mb-3 cursor-pointer overflow-hidden rounded-[1.2rem] bg-gray-50 border border-gray-50/50 flex-shrink-0"
+      >
+        {product.image && (
+          <img src={product.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" referrerPolicy="no-referrer" />
+        )}
+      </div>
+      <div className="px-1 mb-2">
+        <h4 className="text-[10px] font-black text-brand-dark line-clamp-2 leading-tight uppercase tracking-tight mb-1 cursor-pointer hover:text-brand-yellow transition-colors" onClick={onClick}>{product.name}</h4>
+        <p className="text-sm font-black text-brand-blue italic">€{(product.price || 0).toFixed(2)}</p>
+      </div>
+      <button 
+        onClick={onClick}
+        className="mt-auto w-full py-2 bg-gray-50 hover:bg-brand-yellow rounded-xl text-[8px] font-black uppercase tracking-widest text-gray-400 hover:text-brand-dark transition-all"
+      >
+        Scopri
+      </button>
+    </motion.div>
+  );
+}
+
+const ProductSheet = ({ product, onClose, onAddToCart, isDesktop, reviews = [], favorites = [], toggleFavorite, onShare, onSelectProduct, allProducts = [] }: { product: Product; onClose: () => void; onAddToCart: (p: Product) => void; isDesktop: boolean; reviews?: any[]; favorites?: string[]; toggleFavorite?: (id: string) => void; onShare?: (p: Product) => void; onSelectProduct?: (p: Product) => void; allProducts?: Product[]; key?: any }) => {
   const [quantity, setQuantity] = useState(1);
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>(() => {
+    // Auto-seleziona la prima opzione per ogni tipo
+    const initial: Record<string, string> = {};
+    product.variants?.forEach(v => {
+      if (!initial[v.type]) initial[v.type] = v.value;
+    });
+    return initial;
+  });
   const [activeImage, setActiveImage] = useState(product.image);
-  const [isFavorite, setIsFavorite] = useState(false);
+  const isFavorite = favorites.includes(product.id);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  
+  // PDF Viewer State
+  const [activePdf, setActivePdf] = useState<{ url: string; title: string } | null>(null);
+
   const carouselRef = useRef<HTMLDivElement>(null);
+
+  const approvedReviews = reviews.filter(rev => rev.productId === product.id && rev.status === 'approved');
+  const avgRating = approvedReviews.length > 0
+    ? approvedReviews.reduce((sum, r) => sum + r.rating, 0) / approvedReviews.length
+    : (product.rating || 0);
+  const reviewCount = approvedReviews.length > 0
+    ? approvedReviews.length + (product.reviews || 0)
+    : (product.reviews || 0);
+
+  const variantsByType = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    product.variants?.forEach(v => {
+      if (!groups[v.type]) groups[v.type] = [];
+      if (!groups[v.type].some(item => item.value === v.value)) {
+        groups[v.type].push(v);
+      }
+    });
+    return groups;
+  }, [product.variants]);
+
+  const selectedVariantObject = useMemo(() => {
+    if (!product.variants || product.variants.length === 0) return null;
+    // For simplicity with current flat structure, we find the one matching the first selected value
+    // In a multi-dim system, we'd match all selected types.
+    const firstType = Object.keys(variantsByType)[0];
+    if (!firstType || !selectedVariants[firstType]) return null;
+    return product.variants.find(v => v.type === firstType && v.value === selectedVariants[firstType]) || null;
+  }, [product.variants, selectedVariants, variantsByType]);
+
+  useEffect(() => {
+    if (selectedVariantObject?.image) {
+      setActiveImage(selectedVariantObject.image);
+    } else {
+      setActiveImage(product.image);
+    }
+  }, [selectedVariantObject, product.image]);
+
+  const displayPrice = useMemo(() => {
+    const basePrice = product.price || 0;
+    if (selectedVariantObject) {
+      if (selectedVariantObject.costType === 'fixed') return selectedVariantObject.costValue || basePrice;
+      if (selectedVariantObject.costType === 'delta') return basePrice + (selectedVariantObject.costValue || 0);
+      if (selectedVariantObject.costType === 'percent') return basePrice * (1 + (selectedVariantObject.costValue || 0) / 100);
+    }
+    return basePrice;
+  }, [product, selectedVariantObject]);
 
   const scroll = (direction: 'left' | 'right') => {
     if (carouselRef.current) {
@@ -255,36 +523,43 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop }: { product: P
   };
 
   const relatedProducts = useMemo(() => {
-    return PRODUCTS.filter(p => p.category === product.category && p.id !== product.id).slice(0, 8);
-  }, [product]);
+    // If we have manual related products, show them
+    if (product.relatedProductIds && product.relatedProductIds.length > 0) {
+      return allProducts.filter(p => product.relatedProductIds?.includes(p.id));
+    }
+    // Default fallback: items from the same category
+    const pool = allProducts.length > 0 ? allProducts : PRODUCTS;
+    return pool.filter(p => p.category === product.category && p.id !== product.id).slice(0, 8);
+  }, [product, allProducts]);
 
   return (
     <>
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+      <div 
         onClick={onClose}
         className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50"
       />
-      <motion.div 
-        initial={{ y: "100%", x: isDesktop ? "-50%" : 0, opacity: 0 }}
-        animate={{ 
-          y: isDesktop ? "-50%" : 0, 
-          x: isDesktop ? "-50%" : 0,
-          opacity: 1,
+      <div 
+        className="fixed inset-x-0 lg:inset-auto bg-white rounded-t-[32px] lg:rounded-[40px] z-[100] shadow-2xl flex flex-col lg:h-[85vh] lg:w-[90vw] lg:max-w-6xl overflow-hidden"
+        style={{
           top: isDesktop ? "50%" : "5.5rem",
           bottom: isDesktop ? "auto" : 0,
-          left: isDesktop ? "50%" : 0
+          left: isDesktop ? "50%" : 0,
+          transform: isDesktop ? "translate(-50%, -50%)" : "none",
         }}
-        exit={{ y: "100%", opacity: 0 }}
-        transition={{ type: "spring", damping: 30, stiffness: 250 }}
-        className="fixed inset-x-0 lg:inset-auto bg-white rounded-t-[32px] lg:rounded-[40px] z-50 shadow-2xl flex flex-col lg:h-[85vh] lg:w-[90vw] lg:max-w-6xl overflow-hidden"
       >
         <div 
           onClick={onClose}
           className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto my-3 flex-shrink-0 cursor-pointer hover:bg-gray-300 transition-colors lg:hidden" 
         />
+
+        {/* Mobile Close Button */}
+        <button 
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
+          className="absolute top-4 right-4 p-2 bg-gray-100 hover:bg-gray-200 rounded-full z-[110] lg:hidden"
+          type="button"
+        >
+          <X className="w-5 h-5 text-gray-500" />
+        </button>
         
         <div className="overflow-y-auto pb-32 px-6 lg:p-10 flex-1">
           <div className="lg:grid lg:grid-cols-12 lg:gap-12 items-start">
@@ -299,10 +574,10 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop }: { product: P
                 <AnimatePresence mode="wait">
                   <motion.img 
                     key={activeImage}
-                    initial={{ opacity: 0, scale: 1.1 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ duration: 0.3 }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0 }}
                     src={activeImage || undefined} 
                     alt={product.name} 
                     className="w-full h-full object-cover"
@@ -316,47 +591,53 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop }: { product: P
                   </div>
                 </div>
                 
-                <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                <div className="absolute top-4 left-4 flex flex-col gap-3 z-10">
                   <button 
-                    onClick={(e) => { e.stopPropagation(); setIsFavorite(!isFavorite); }}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg backdrop-blur-md transition-all ${isFavorite ? "bg-red-500 text-white" : "bg-white/80 text-gray-400"}`}
+                    onClick={(e) => { e.stopPropagation(); toggleFavorite?.(product.id); }}
+                    className={`transition-all hover:scale-110 active:scale-90 ${isFavorite ? "text-red-500 drop-shadow-md" : "text-white/70 hover:text-red-500 drop-shadow-md"}`}
                   >
-                    <Heart className={`w-5 h-5 ${isFavorite ? "fill-white" : ""}`} />
+                    <Heart className={`w-5 h-5 ${isFavorite ? "fill-current" : ""}`} />
                   </button>
-                  <button onClick={(e) => e.stopPropagation()} className="w-10 h-10 rounded-full bg-white/80 backdrop-blur-md text-gray-400 flex items-center justify-center shadow-lg">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); onShare?.(product); }}
+                    className="text-white/70 hover:text-sky-400 transition-all hover:scale-110 active:scale-90 drop-shadow-md"
+                  >
                     <Share2 className="w-5 h-5" />
                   </button>
                 </div>
               </div>
 
-              {/* Thumbnails */}
-              <div className="flex gap-3 mb-6 overflow-x-auto no-scrollbar pb-2">
-                <button 
-                  key="main-thumb"
-                  onClick={() => setActiveImage(product.image)}
-                  className={`w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border-2 transition-all ${activeImage === product.image ? "border-brand-yellow" : "border-transparent"}`}
-                >
-                  {product.image && (
-                    <img src={product.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  )}
-                </button>
-                {product.gallery.map((img, idx) => (
-                  <button 
-                    key={`gallery-${idx}`}
-                    onClick={() => setActiveImage(img)}
-                    className={`w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border-2 transition-all ${activeImage === img ? "border-brand-yellow" : "border-transparent"}`}
+              {/* Thumbnails con scroll */}
+              <div className="relative mb-6">
+                <div className="flex gap-3 overflow-x-auto pb-2 scroll-smooth" style={{ scrollbarWidth: 'thin', scrollbarColor: '#e5e7eb transparent' }}>
+                  {/* Prima immagine (principale) */}
+                  <button
+                    onClick={() => setActiveImage(product.image)}
+                    className={`w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border-2 transition-all ${activeImage === product.image ? "border-brand-yellow" : "border-transparent hover:border-gray-300"}`}
                   >
-                    {img && (
-                      <img src={img} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    {product.image && (
+                      <img src={product.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     )}
                   </button>
-                ))}
-                {product.has3D && (
-                  <button className="w-16 h-16 rounded-xl bg-brand-blue flex flex-col items-center justify-center text-white flex-shrink-0 group hover:bg-brand-yellow hover:text-brand-dark transition-colors">
-                    <Box className="w-6 h-6 mb-1" />
-                    <span className="text-[8px] font-bold uppercase">3D View</span>
-                  </button>
-                )}
+                  {/* Galleria: escludi la prima immagine se già mostrata sopra */}
+                  {(product?.gallery || []).filter(img => img !== product.image).map((img, idx) => (
+                    <button
+                      key={`gallery-${idx}`}
+                      onClick={() => setActiveImage(img)}
+                      className={`w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border-2 transition-all ${activeImage === img ? "border-brand-yellow" : "border-transparent hover:border-gray-300"}`}
+                    >
+                      {img && (
+                        <img src={img} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      )}
+                    </button>
+                  ))}
+                  {product.has3D && (
+                    <button className="w-16 h-16 rounded-xl bg-brand-blue flex flex-col items-center justify-center text-white flex-shrink-0 group hover:bg-brand-yellow hover:text-brand-dark transition-colors">
+                      <Box className="w-6 h-6 mb-1" />
+                      <span className="text-[8px] font-bold uppercase">3D View</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -364,16 +645,32 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop }: { product: P
             <div className="lg:col-span-4 space-y-10">
               {/* Info */}
               <div className="mb-4">
-                <p className="text-xs font-semibold text-brand-yellow uppercase tracking-widest mb-1">{product.category}</p>
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="text-xs font-semibold text-brand-yellow uppercase tracking-widest">{product.category}</p>
+                  {product.brand && product.showBrand && (
+                    <>
+                      <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
+                      <p className="text-xs font-black text-brand-blue uppercase tracking-widest">{product.brand}</p>
+                    </>
+                  )}
+                </div>
                 <h2 className="text-2xl lg:text-3xl font-black text-brand-dark leading-tight">{product.name}</h2>
+                {product.weight && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <Package className="w-4 h-4 text-gray-400" />
+                    <span className="text-xs font-bold text-gray-500">Peso: {product.weight} Kg</span>
+                  </div>
+                )}
               </div>
 
               {/* Description */}
               <div className="space-y-4">
                 <h4 className="font-black text-sm uppercase tracking-widest text-brand-dark border-l-4 border-brand-yellow pl-3">Descrizione</h4>
                 <div className="text-gray-600 text-sm leading-relaxed space-y-4">
-                  <p>{product.description}</p>
-                  <p>Progettato per durare nel tempo, questo prodotto unisce materiali di alta qualità a un design funzionale che si adatta a ogni ambiente.</p>
+                  <div 
+                    dangerouslySetInnerHTML={{ __html: product.description }} 
+                    className="rich-content"
+                  />
                 </div>
               </div>
 
@@ -381,7 +678,13 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop }: { product: P
               <div className="space-y-6">
                 <h4 className="font-black text-sm uppercase tracking-widest text-brand-dark border-l-4 border-brand-yellow pl-3">Caratteristiche</h4>
                 <div className="grid grid-cols-2 gap-3">
-                  {Object.entries(product.specs).map(([key, value]) => (
+                  {product.showEan && (selectedVariantObject?.ean || product.ean) && (
+                    <div className="bg-brand-blue text-white p-3 rounded-2xl border border-brand-blue shadow-lg shadow-brand-blue/10">
+                      <p className="text-[9px] text-white/60 uppercase font-black mb-0.5">Codice EAN</p>
+                      <p className="text-xs font-black tracking-widest">{selectedVariantObject?.ean || product.ean}</p>
+                    </div>
+                  )}
+                  {Object.entries(product?.specs || {}).map(([key, value]) => (
                     <div key={key} className="bg-gray-50 p-3 rounded-2xl border border-gray-100">
                       <p className="text-[9px] text-gray-400 uppercase font-black mb-0.5">{key}</p>
                       <p className="text-xs font-bold text-brand-dark">{value}</p>
@@ -389,6 +692,69 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop }: { product: P
                   ))}
                 </div>
               </div>
+              {/* Energy Label Preview */}
+              {product.energyLabel && (
+                <div className="space-y-4">
+                  <h4 className="font-black text-sm uppercase tracking-widest text-brand-dark border-l-4 border-brand-yellow pl-3 flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-brand-yellow fill-brand-yellow" /> Efficienza Energetica
+                  </h4>
+                  <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+                    {product.energyLabel.startsWith('data:application/pdf') ? (
+                      <button 
+                        onClick={() => setActivePdf({ url: product.energyLabel!, title: "Etichetta Energetica" })}
+                        className="w-full flex items-center justify-between p-4 bg-brand-yellow/10 hover:bg-brand-yellow/20 border border-brand-yellow/20 rounded-2xl transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm">
+                            <FileText className="w-5 h-5 text-brand-yellow" />
+                          </div>
+                          <span className="text-xs font-black text-brand-dark uppercase tracking-tight">Apri Etichetta Energetica (PDF)</span>
+                        </div>
+                        <ExternalLink className="w-4 h-4 text-brand-yellow group-hover:translate-x-1 transition-transform" />
+                      </button>
+                    ) : (
+                      <img src={product.energyLabel} alt="Energy Label" className="w-full h-auto rounded-lg" />
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Document Download Links */}
+              {(product.techSheet || product.manual) && (
+                <div className="space-y-4">
+                  <h4 className="font-black text-sm uppercase tracking-widest text-brand-dark border-l-4 border-brand-yellow pl-3">Documentazione</h4>
+                  <div className="grid grid-cols-1 gap-3">
+                    {product.techSheet && (
+                      <button 
+                        onClick={() => setActivePdf({ url: product.techSheet!, title: "Scheda Tecnica" })}
+                        className="flex items-center justify-between p-4 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 rounded-2xl transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm">
+                            <FileSpreadsheet className="w-5 h-5 text-indigo-600" />
+                          </div>
+                          <span className="text-xs font-black text-indigo-900 uppercase tracking-tight">Scarica Scheda Tecnica</span>
+                        </div>
+                        <ExternalLink className="w-4 h-4 text-indigo-400 group-hover:translate-x-1 transition-transform" />
+                      </button>
+                    )}
+                    {product.manual && (
+                      <button 
+                        onClick={() => setActivePdf({ url: product.manual!, title: "Manuale d'Uso" })}
+                        className="flex items-center justify-between p-4 bg-teal-50 hover:bg-teal-100 border border-teal-100 rounded-2xl transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm">
+                            <Compass className="w-5 h-5 text-teal-600" />
+                          </div>
+                          <span className="text-xs font-black text-teal-900 uppercase tracking-tight">Manuale d'Uso (PDF)</span>
+                        </div>
+                        <ExternalLink className="w-4 h-4 text-teal-400 group-hover:translate-x-1 transition-transform" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Video Tutorial */}
               {product.videoUrl && (
@@ -420,17 +786,50 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop }: { product: P
             <div className="lg:col-span-3 lg:bg-gray-50/50 lg:p-8 lg:rounded-[32px] lg:border lg:border-gray-100 space-y-8">
               {/* Pricing Card */}
               <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <span className="text-4xl font-black text-brand-blue">€{product.price.toFixed(2)}</span>
-                  <div className="flex flex-col">
-                    <span className="text-sm text-gray-400 line-through">€{(product.price * 1.2).toFixed(2)}</span>
-                    <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase w-fit">-20% OGGI</span>
+                <div className="flex flex-col gap-1">
+                  {/* Prezzo originale barrato + badge sconto inline */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-400 line-through">€{((product?.price || 0) * 1.2).toFixed(2)}</span>
+                    <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase">-20% OGGI</span>
                   </div>
+                  {/* Prezzo scontato grande */}
+                  <span className="text-4xl font-black text-brand-blue leading-none">€{(displayPrice || 0).toFixed(2)}</span>
+                </div>
+
+                {/* SKU Info */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">SKU:</span>
+                  <span className="text-[10px] font-black text-brand-dark uppercase tracking-widest">{selectedVariantObject?.sku || product.sku || 'N/A'}</span>
                 </div>
                 
+                {/* Variant Selection UI */}
+                {Object.entries(variantsByType).map(([type, options]) => (
+                  <div key={type} className="space-y-3 pt-2">
+                    <h4 className="font-black text-[10px] uppercase tracking-widest text-brand-dark flex items-center gap-2">
+                      {type} 
+                      {selectedVariants[type] && <span className="text-brand-blue">— {selectedVariants[type]}</span>}
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                      {options.map((opt) => (
+                        <button
+                          key={opt.id}
+                          onClick={() => setSelectedVariants({ ...selectedVariants, [type]: opt.value })}
+                          className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-tight transition-all border-2 ${
+                            selectedVariants[type] === opt.value
+                              ? "border-brand-yellow bg-brand-yellow/5 text-brand-dark shadow-lg shadow-brand-yellow/10"
+                              : "border-gray-100 hover:border-gray-200 text-gray-400"
+                          }`}
+                        >
+                          {opt.value}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
                 <div className="flex items-center gap-2 text-xs text-green-600 font-bold bg-green-50 p-3 rounded-xl border border-green-100">
                   <Shield className="w-4 h-4" />
-                  <span>Disponibilità immediata</span>
+                  <span>{selectedVariantObject ? `In stock: ${selectedVariantObject.webStock}` : 'Disponibilità immediata'}</span>
                 </div>
               </div>
 
@@ -440,28 +839,29 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop }: { product: P
                   <h4 className="font-black text-sm uppercase tracking-widest text-brand-dark">Recensioni</h4>
                   <div className="flex items-center bg-brand-yellow px-2 py-1 rounded-lg">
                     <Star className="w-3 h-3 text-brand-dark fill-brand-dark mr-1" />
-                    <span className="text-xs font-black text-brand-dark">{product.rating}</span>
+                    <span className="text-xs font-black text-brand-dark">{(avgRating || 0).toFixed(1)}</span>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  {[
-                    { stars: 5, percentage: 75 },
-                    { stars: 4, percentage: 15 },
-                    { stars: 3, percentage: 5 },
-                  ].map((row) => (
-                    <div key={row.stars} className="flex items-center gap-2 text-[10px]">
-                      <span className="w-10 font-bold text-gray-500">{row.stars} stelle</span>
-                      <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          whileInView={{ width: `${row.percentage}%` }}
-                          className="h-full bg-brand-yellow"
-                        />
+                  {[5, 4, 3, 2, 1].map((stars) => {
+                    const count = approvedReviews.filter(r => r.rating === stars).length;
+                    const percentage = approvedReviews.length > 0 ? Math.round((count / approvedReviews.length) * 100) : 0;
+                    return (
+                      <div key={stars} className="flex items-center gap-2 text-[10px]">
+                        <span className="w-10 font-bold text-gray-400">{stars} stelle</span>
+                        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            whileInView={{ width: `${percentage}%` }}
+                            transition={{ duration: 1, ease: "easeOut" }}
+                            className={`h-full ${stars >= 4 ? 'bg-brand-yellow' : stars === 3 ? 'bg-orange-400' : 'bg-red-400'}`}
+                          />
+                        </div>
+                        <span className="w-8 text-right text-gray-400 font-bold">{percentage}%</span>
                       </div>
-                      <span className="w-6 text-right text-gray-400 font-bold uppercase">{row.percentage}%</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {/* Individual Review Sample */}
@@ -475,7 +875,7 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop }: { product: P
                   <p className="text-[11px] text-gray-600 italic leading-relaxed">"Qualità eccezionale, arrivato in 24 ore. BesPoint una garanzia!"</p>
                 </div>
 
-                <button className="w-full text-center text-xs font-bold text-blue-600 hover:underline pt-2">Vedi tutte le {product.reviews} recensioni</button>
+                <button className="w-full text-center text-xs font-bold text-blue-600 hover:underline pt-2">Vedi tutte le {reviewCount || 0} recensioni</button>
               </div>
             </div>
           </div>
@@ -510,7 +910,8 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop }: { product: P
                   transition={{ delay: idx * 0.05 }}
                   viewport={{ once: true }}
                   key={p.id} 
-                  className="flex-shrink-0 w-44 lg:w-56 snap-start bg-white border border-gray-100 rounded-2xl p-4 shadow-sm group cursor-pointer"
+                  onClick={() => onSelectProduct?.(p)}
+                  className="flex-shrink-0 w-44 lg:w-56 snap-start bg-white border border-gray-100 rounded-2xl p-4 shadow-sm group cursor-pointer hover:shadow-md transition-all active:scale-95"
                 >
                   <div className="aspect-square rounded-xl overflow-hidden mb-3 bg-gray-50">
                     {p.image && (
@@ -519,7 +920,7 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop }: { product: P
                   </div>
                   <h5 className="text-xs font-bold text-brand-dark line-clamp-2 h-10">{p.name}</h5>
                   <div className="mt-2 flex items-center justify-between">
-                    <p className="text-sm font-black text-brand-blue">€{p.price.toFixed(2)}</p>
+                    <p className="text-sm font-black text-brand-blue">€{(p.price || 0).toFixed(2)}</p>
                     <div className="flex items-center gap-0.5">
                       <Star className="w-3 h-3 text-brand-yellow fill-brand-yellow" />
                       <span className="text-[10px] font-bold">{p.rating}</span>
@@ -557,7 +958,13 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop }: { product: P
             
             <button 
               onClick={() => {
-                for(let i=0; i<quantity; i++) onAddToCart(product);
+                const itemToAddToCart = {
+                  ...product,
+                  price: displayPrice,
+                  sku: selectedVariantObject?.sku || product.sku,
+                  name: selectedVariantObject ? `${product.name} - ${selectedVariantObject.value}` : product.name
+                };
+                for(let i=0; i<quantity; i++) onAddToCart(itemToAddToCart);
                 onClose();
               }}
               className="flex-[2] bg-brand-yellow hover:bg-brand-orange text-brand-dark h-14 lg:h-16 rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95 transition-all uppercase text-sm tracking-widest shadow-xl shadow-brand-yellow/20"
@@ -567,14 +974,15 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop }: { product: P
             </button>
             
             <button 
-              onClick={onClose}
-              className="hidden lg:flex w-14 h-14 lg:w-16 lg:h-16 bg-gray-100 hover:bg-gray-200 text-brand-dark rounded-2xl items-center justify-center transition-colors"
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onClose(); }}
+              className="hidden lg:flex w-14 h-14 lg:w-16 lg:h-16 bg-gray-100 hover:bg-gray-200 text-brand-dark rounded-2xl items-center justify-center transition-all active:scale-90 z-10"
             >
               <X className="w-6 h-6" />
             </button>
           </div>
         </div>
-      </motion.div>
+      </div>
 
       {/* Fullscreen Lightbox */}
       <AnimatePresence>
@@ -626,15 +1034,839 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop }: { product: P
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* PDF Viewer Modal Integrated */}
+      <PdfViewerModal 
+        url={activePdf?.url || ""} 
+        title={activePdf?.title || ""} 
+        onClose={() => setActivePdf(null)} 
+      />
     </>
   );
 };
 
-const CartDrawer = ({ items, onClose, onUpdateQuantity, onRemove }: { 
+const ITALIAN_PROVINCES = [
+  { code: 'AG', name: 'Agrigento' }, { code: 'AL', name: 'Alessandria' }, { code: 'AN', name: 'Ancona' },
+  { code: 'AO', name: 'Aosta' }, { code: 'AR', name: 'Arezzo' }, { code: 'AP', name: 'Ascoli Piceno' },
+  { code: 'AT', name: 'Asti' }, { code: 'AV', name: 'Avellino' }, { code: 'BA', name: 'Bari' },
+  { code: 'BT', name: 'Barletta-Andria-Trani' }, { code: 'BL', name: 'Belluno' }, { code: 'BN', name: 'Benevento' },
+  { code: 'BG', name: 'Bergamo' }, { code: 'BI', name: 'Biella' }, { code: 'BO', name: 'Bologna' },
+  { code: 'BZ', name: 'Bolzano' }, { code: 'BS', name: 'Brescia' }, { code: 'BR', name: 'Brindisi' },
+  { code: 'CA', name: 'Cagliari' }, { code: 'CL', name: 'Caltanissetta' }, { code: 'CB', name: 'Campobasso' },
+  { code: 'CI', name: 'Carbonia-Iglesias' }, { code: 'CE', name: 'Caserta' }, { code: 'CT', name: 'Catania' },
+  { code: 'CZ', name: 'Catanzaro' }, { code: 'CH', name: 'Chieti' }, { code: 'CO', name: 'Como' },
+  { code: 'CS', name: 'Cosenza' }, { code: 'CR', name: 'Cremona' }, { code: 'KR', name: 'Crotone' },
+  { code: 'CN', name: 'Cuneo' }, { code: 'EN', name: 'Enna' }, { code: 'FM', name: 'Fermo' },
+  { code: 'FE', name: 'Ferrara' }, { code: 'FI', name: 'Firenze' }, { code: 'FG', name: 'Foggia' },
+  { code: 'FC', name: 'Forlì-Cesena' }, { code: 'FR', name: 'Frosinone' }, { code: 'GE', name: 'Genova' },
+  { code: 'GO', name: 'Gorizia' }, { code: 'GR', name: 'Grosseto' }, { code: 'IM', name: 'Imperia' },
+  { code: 'IS', name: 'Isernia' }, { code: 'SP', name: 'La Spezia' }, { code: 'AQ', name: 'L\'Aquila' },
+  { code: 'LT', name: 'Latina' }, { code: 'LE', name: 'Lecce' }, { code: 'LC', name: 'Lecco' },
+  { code: 'LI', name: 'Livorno' }, { code: 'LO', name: 'Lodi' }, { code: 'LU', name: 'Lucca' },
+  { code: 'MC', name: 'Macerata' }, { code: 'MN', name: 'Mantova' }, { code: 'MS', name: 'Massa-Carrara' },
+  { code: 'MT', name: 'Matera' }, { code: 'VS', name: 'Medio Campidano' }, { code: 'ME', name: 'Messina' },
+  { code: 'MI', name: 'Milano' }, { code: 'MO', name: 'Modena' }, { code: 'MB', name: 'Monza e della Brianza' },
+  { code: 'NA', name: 'Napoli' }, { code: 'NO', name: 'Novara' }, { code: 'NU', name: 'Nuoro' },
+  { code: 'OG', name: 'Ogliastra' }, { code: 'OT', name: 'Olbia-Tempio' }, { code: 'OR', name: 'Oristano' },
+  { code: 'PD', name: 'Padova' }, { code: 'PA', name: 'Palermo' }, { code: 'PR', name: 'Parma' },
+  { code: 'PV', name: 'Pavia' }, { code: 'PG', name: 'Perugia' }, { code: 'PU', name: 'Pesaro e Urbino' },
+  { code: 'PE', name: 'Pescara' }, { code: 'PC', name: 'Piacenza' }, { code: 'PI', name: 'Pisa' },
+  { code: 'PT', name: 'Pistoia' }, { code: 'PN', name: 'Pordenone' }, { code: 'PZ', name: 'Potenza' },
+  { code: 'PO', name: 'Prato' }, { code: 'RG', name: 'Ragusa' }, { code: 'RA', name: 'Ravenna' },
+  { code: 'RC', name: 'Reggio Calabria' }, { code: 'RE', name: 'Reggio Emilia' }, { code: 'RI', name: 'Rieti' },
+  { code: 'RN', name: 'Rimini' }, { code: 'RM', name: 'Roma' }, { code: 'RO', name: 'Rovigo' },
+  { code: 'SA', name: 'Salerno' }, { code: 'SS', name: 'Sassari' }, { code: 'SV', name: 'Savona' },
+  { code: 'SI', name: 'Siena' }, { code: 'SR', name: 'Siracusa' }, { code: 'SO', name: 'Sondrio' },
+  { code: 'TA', name: 'Taranto' }, { code: 'TE', name: 'Teramo' }, { code: 'TR', name: 'Terni' },
+  { code: 'TO', name: 'Torino' }, { code: 'TP', name: 'Trapani' }, { code: 'TN', name: 'Trento' },
+  { code: 'TV', name: 'Treviso' }, { code: 'TS', name: 'Trieste' }, { code: 'UD', name: 'Udine' },
+  { code: 'VA', name: 'Varese' }, { code: 'VE', name: 'Venezia' }, { code: 'VB', name: 'Verbano-Cusio-Ossola' },
+  { code: 'VC', name: 'Vercelli' }, { code: 'VR', name: 'Verona' }, { code: 'VV', name: 'Vibo Valentia' },
+  { code: 'VI', name: 'Vicenza' }, { code: 'VT', name: 'Viterbo' }
+];
+
+const PREDEFINED_CITIES = [
+  "Roma", "Milano", "Napoli", "Torino", "Palermo", "Genova", "Bologna", "Firenze", "Bari", "Catania", 
+  "Venezia", "Verona", "Messina", "Padova", "Trieste", "Taranto", "Brescia", "Parma", "Prato", "Modena", 
+  "Reggio Calabria", "Reggio Emilia", "Perugia", "Ravenna", "Livorno", "Cagliari", "Foggia", "Rimini", 
+  "Salerno", "Ferrara"
+].sort();
+
+const CheckoutSheet = ({ 
+  items, 
+  onClose, 
+  settings, 
+  currentUser,
+  onAuthOpen,
+  appOrders,
+  setAppOrders,
+  setCart,
+  companySettings,
+  addToast
+}: { 
+  items: CartItem[]; 
+  onClose: () => void; 
+  settings: any;
+  currentUser: any;
+  onAuthOpen: () => void;
+  appOrders: any[];
+  setAppOrders: (orders: any[]) => void;
+  setCart: (cart: any[]) => void;
+  companySettings: any;
+  addToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+}) => {
+  const [shippingForm, setShippingForm] = useState({
+    name: currentUser?.name || '',
+    street: currentUser?.addressStreet || '',
+    city: currentUser?.addressCity || '',
+    zip: currentUser?.addressZip || '',
+    province: currentUser?.addressProvince || '',
+    phone: currentUser?.phone || '',
+    email: currentUser?.email || '',
+    notes: '',
+    isCustomCity: false
+  });
+
+  const [orderId] = useState(() => `BP-${new Date().getFullYear()}-${Math.floor(Math.random() * 899 + 100)}`);
+
+  const [step, setStep] = useState<'shipping' | 'methods' | 'details' | 'success'>(
+    (currentUser?.addressStreet && currentUser?.addressCity) ? 'methods' : 'shipping'
+  );
+  const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+  useEffect(() => {
+    if (currentUser) {
+      setShippingForm(prev => ({
+        ...prev,
+        name: currentUser.name || prev.name,
+        email: currentUser.email || prev.email,
+        phone: currentUser.phone || prev.phone,
+        street: currentUser.addressStreet || prev.street,
+        city: currentUser.addressCity || prev.city,
+        zip: currentUser.addressZip || prev.zip,
+        province: currentUser.addressProvince || prev.province,
+        isCustomCity: currentUser.addressCity && !PREDEFINED_CITIES.includes(currentUser.addressCity)
+      }));
+      
+      // Auto-advance to Step 2 if address info is already complete
+      if (currentUser.addressStreet && currentUser.addressCity && step === 'shipping') {
+        setStep('methods');
+        addToast("Bentornato! Abbiamo pre-compilato i tuoi dati di spedizione.", "success");
+      }
+    }
+  }, [currentUser, step]);
+
+  const handleConfirmOrder = () => {
+    if (!currentUser) {
+      onAuthOpen();
+      return;
+    }
+    
+    setIsProcessing(true);
+    
+    // Simula tempo di transazione
+    setTimeout(() => {
+      const newOrder = {
+        id: orderId,
+        date: new Date().toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' }),
+        customer: shippingForm.name || currentUser?.name || "Cliente Registrato",
+        email: shippingForm.email || currentUser?.email || "guest@bespoint.it",
+        phone: shippingForm.phone,
+        channel: 'website',
+        total: total,
+        status: 'pending',
+        itemsCount: items.length,
+        address: `${shippingForm.street}, ${shippingForm.city} (${shippingForm.province}) - CAP ${shippingForm.zip}`,
+        notes: shippingForm.notes,
+        payment: selectedMethod === 'stripe' ? 'Carta di Credito (Stripe)' : 
+                 selectedMethod === 'paypal' ? 'PayPal' : 
+                 selectedMethod === 'cod' ? 'Contrassegno' : 'Bonifico Bancario',
+        paymentType: selectedMethod, // Helps in filtering
+        items: items.map(item => ({ 
+          id: item.id, 
+          name: item.name, 
+          qty: item.quantity, 
+          price: item.price, 
+          image: item.image 
+        }))
+      };
+
+      setAppOrders([newOrder, ...appOrders]);
+      setCart([]);
+      setIsProcessing(false);
+      setStep('success');
+    }, 1500);
+  };
+  const handlePrintProforma = () => {
+    const printWindow = window.open('', '_blank', 'width=900,height=700');
+    if (!printWindow) return;
+
+    const methodLabel = selectedMethod === 'stripe' ? 'Carta di Credito / GPay' 
+      : selectedMethod === 'paypal' ? 'PayPal' 
+      : selectedMethod === 'bank' ? 'Bonifico Bancario' 
+      : 'Contrassegno';
+
+    const itemsHTML = items.map(item => `
+      <tr>
+        <td style="padding:8px 4px;border-bottom:1px solid #f0f0f0;">
+          ${item.image ? `<img src="${item.image}" style="width:36px;height:36px;object-fit:contain;border-radius:4px;border:1px solid #eee;" />` : ''}
+        </td>
+        <td style="padding:8px 4px;border-bottom:1px solid #f0f0f0;">
+          <strong style="font-size:12px;color:#0a0a0a;">${item.name}</strong>
+          <div style="font-size:9px;color:#aaa;text-transform:uppercase;letter-spacing:1px;">SKU-${item.id.padStart(4,'0')}</div>
+        </td>
+        <td style="padding:8px 4px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;">&euro;${item.price.toFixed(2)}</td>
+        <td style="padding:8px 4px;border-bottom:1px solid #f0f0f0;text-align:center;">
+          <span style="background:#f5f5f5;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:900;">${item.quantity}</span>
+        </td>
+        <td style="padding:8px 4px;border-bottom:1px solid #f0f0f0;text-align:right;font-weight:900;font-size:12px;">&euro;${(item.price*item.quantity).toFixed(2)}</td>
+      </tr>
+    `).join('');
+
+    const bankHTML = selectedMethod === 'bank' ? `
+      <div style="background:#fffde7;border:1px solid #ffd600;border-radius:8px;padding:12px;margin-top:16px;">
+        <div style="font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:6px;">Dati per il Bonifico</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div><div style="font-size:8px;color:#aaa;text-transform:uppercase;">Beneficiario</div><strong style="font-size:12px;">${settings.bankOwner || 'BESPOINT S.R.L.'}</strong></div>
+          <div><div style="font-size:8px;color:#aaa;text-transform:uppercase;">IBAN</div><strong style="font-size:12px;letter-spacing:1px;">${settings.bankIban || '—'}</strong></div>
+        </div>
+      </div>` : selectedMethod === 'cod' ? `
+      <div style="background:#fff3e0;border:1px solid #ffcc80;border-radius:8px;padding:12px;margin-top:16px;">
+        <div style="font-size:10px;font-weight:700;color:#b45309;">${settings.codNote || 'Pagamento in contanti direttamente al corriere alla consegna.'}</div>
+      </div>` : '';
+
+    const logoHTML = companySettings.imageLogo 
+      ? `<img src="${companySettings.imageLogo}" style="height:60px;object-fit:contain;" referrerpolicy="no-referrer" />`
+      : `<div style="width:52px;height:52px;background:#ffd600;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:22px;font-style:italic;">${companySettings.logo}</div>`;
+
+    const html = `<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Proforma Ordine — ${companySettings.name}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
+    * { margin:0;padding:0;box-sizing:border-box; }
+    body { font-family:'Inter',sans-serif;background:white;color:#0a0a0a;padding:24px 32px; }
+    table { width:100%;border-collapse:collapse; }
+    @media print {
+      @page { size:A4 portrait;margin:12mm 14mm; }
+      body { padding:0; }
+    }
+  </style>
+</head>
+<body>
+  <!-- HEADER -->
+  <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:16px;border-bottom:3px solid #ffd600;margin-bottom:20px;">
+    <div style="display:flex;align-items:center;gap:14px;">
+      ${logoHTML}
+      <div>
+        <div style="font-weight:900;font-size:18px;text-transform:uppercase;letter-spacing:-0.5px;">${companySettings.name}</div>
+        <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-top:2px;">${companySettings.legalName || ''}</div>
+      </div>
+    </div>
+      <div style="text-align:right;">
+      <div style="font-size:22px;font-weight:900;text-transform:uppercase;letter-spacing:-1px;">PROFORMA</div>
+      <div style="font-size:12px;font-weight:900;color:#2563eb;">#${orderId}</div>
+      <div style="font-size:9px;color:#888;text-transform:uppercase;">${new Date().toLocaleDateString('it-IT', {day:'2-digit',month:'long',year:'numeric'})}</div>
+    </div>
+  </div>
+
+  <!-- ANAGRAFICA + SPEDIZIONE -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+    <div style="background:#fafafa;border:1px solid #eee;border-radius:8px;padding:12px;">
+      <div style="font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:6px;">Cliente</div>
+      <div style="font-weight:900;font-size:13px;">${shippingForm.name}</div>
+      <div style="font-size:10px;color:#555;margin-top:2px;">${shippingForm.email}</div>
+      <div style="font-size:10px;color:#2563eb;font-weight:700;">${shippingForm.phone}</div>
+    </div>
+    <div style="background:#fafafa;border:1px solid #eee;border-radius:8px;padding:12px;">
+      <div style="font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:6px;">Destinazione merce</div>
+      <div style="font-weight:700;font-size:12px;">${shippingForm.street}</div>
+      <div style="font-size:10px;color:#555;">${shippingForm.zip} ${shippingForm.city} (${shippingForm.province})</div>
+      ${shippingForm.notes ? `<div style="font-size:9px;color:#ca8a04;margin-top:4px;font-weight:700;">NOTE: ${shippingForm.notes}</div>` : ''}
+    </div>
+  </div>
+
+  <!-- PAGAMENTO -->
+  <div style="background:#0a0a0a;color:white;border-radius:8px;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <div>
+      <div style="font-size:8px;color:#888;text-transform:uppercase;letter-spacing:1px;">Metodo di Pagamento</div>
+      <div style="font-weight:900;font-size:13px;color:#ffd600;">${methodLabel}</div>
+    </div>
+    <div style="font-size:9px;border:1px solid rgba(255,214,0,0.3);background:rgba(255,214,0,0.1);color:#ffd600;padding:3px 10px;border-radius:99px;font-weight:900;text-transform:uppercase;">In attesa</div>
+  </div>
+
+  <!-- PRODOTTI -->
+  <table>
+    <thead>
+      <tr style="background:#f5f5f5;">
+        <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;width:44px;"></th>
+        <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;text-align:left;">Articolo</th>
+        <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;text-align:center;">Prezzo</th>
+        <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;text-align:center;">Qt</th>
+        <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;text-align:right;">Totale</th>
+      </tr>
+    </thead>
+    <tbody>${itemsHTML}</tbody>
+  </table>
+
+  <!-- TOTALI -->
+  <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;margin-top:16px;padding-top:12px;border-top:2px solid #f0f0f0;">
+    <div style="display:flex;justify-content:space-between;width:200px;font-size:10px;color:#888;">
+      <span>Subtotale</span><span style="color:#0a0a0a;font-weight:700;">&euro;${total.toFixed(2)}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;width:200px;font-size:10px;color:#16a34a;font-weight:700;">
+      <span>Spedizione</span><span>&euro;0,00</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;width:220px;background:#ffd600;padding:10px 16px;border-radius:10px;margin-top:4px;">
+      <span style="font-weight:900;font-size:10px;text-transform:uppercase;letter-spacing:1px;">Totale Ordine</span>
+      <span style="font-weight:900;font-size:18px;">&euro;${total.toFixed(2)}</span>
+    </div>
+  </div>
+
+  ${bankHTML}
+
+  <!-- FOOTER -->
+  <div style="margin-top:32px;padding-top:12px;border-top:1px solid #eee;font-size:8px;color:#aaa;text-align:center;">
+    Documento proforma generato automaticamente da ${companySettings.name}. Non costituisce fattura fiscale.
+    La fattura elettronica sarà emessa e trasmessa tramite SDI al momento della spedizione.
+  </div>
+</body>
+</html>`;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); }, 600);
+  };
+
+  if (step === 'success') {
+    return (
+      <>
+        <motion.div 
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}
+          className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100]"
+        />
+        <motion.div 
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 pointer-events-none"
+        >
+          <div className="bg-white rounded-[3rem] p-12 text-center max-w-sm shadow-2xl space-y-6 pointer-events-auto">
+            <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center mx-auto text-white">
+              <Check className="w-12 h-12" />
+            </div>
+            <div>
+              <h2 className="text-3xl font-black text-brand-dark uppercase tracking-tighter">Ordine Ricevuto!</h2>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-2">Grazie per aver scelto BesPoint</p>
+            </div>
+            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+              <p className="text-[10px] font-black uppercase text-gray-400">ID Ordine Web</p>
+              <p className="text-lg font-black text-brand-dark">{orderId}</p>
+            </div>
+            <button 
+              onClick={onClose}
+              className="w-full py-4 bg-brand-dark text-brand-yellow rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-brand-yellow hover:text-brand-dark transition-all"
+            >
+              Torna alla Home
+            </button>
+          </div>
+        </motion.div>
+      </>
+    );
+  }
+  return (
+    <>
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100]"
+      />
+      <motion.div 
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 30, stiffness: 300 }}
+        className="fixed bottom-0 left-0 right-0 max-h-[90vh] bg-white rounded-t-[40px] z-[101] shadow-2xl flex flex-col lg:inset-y-0 lg:right-0 lg:left-auto lg:w-full lg:max-w-2xl lg:rounded-none"
+      >
+        <div className="p-8 flex items-center justify-between border-b border-gray-100">
+          <div>
+            <h2 className="text-2xl font-black text-brand-dark uppercase tracking-tighter">Checkout</h2>
+            <p className="text-xs text-secondary font-bold uppercase tracking-widest">{items.length} articoli • Totale €{total.toFixed(2)}</p>
+          </div>
+          <button onClick={onClose} className="p-3 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        {/* Checkout Stepper */}
+        <div className="px-8 py-6 border-b border-gray-50 flex items-center justify-between relative overflow-hidden bg-gray-50/30">
+          <div className="absolute top-[38px] left-16 right-16 h-1 bg-gray-100 rounded-full">
+            <motion.div 
+               initial={{ width: 0 }}
+               animate={{ width: step === 'shipping' ? '0%' : step === 'methods' ? '50%' : '100%' }}
+               className="h-full bg-brand-yellow rounded-full shadow-[0_0_10px_rgba(255,214,0,0.4)]"
+            />
+          </div>
+          
+          {[
+            { id: 1, label: 'Spedizione', s: 'shipping' },
+            { id: 2, label: 'Pagamento', s: 'methods' },
+            { id: 3, label: 'Conferma', s: 'details' }
+          ].map((s, idx) => {
+            const currentStepNum = step === 'shipping' ? 1 : step === 'methods' ? 2 : 3;
+            const isCompleted = currentStepNum > s.id;
+            const isActive = currentStepNum === s.id;
+            
+            return (
+              <div key={s.id} className="relative z-10 flex flex-col items-center gap-2 group cursor-pointer" onClick={() => {
+                if (isCompleted) {
+                  if (s.s === 'shipping') setStep('shipping');
+                  if (s.s === 'methods') setStep('methods');
+                }
+              }}>
+                <motion.div 
+                   animate={{ 
+                     backgroundColor: (isCompleted || isActive) ? "#FFD600" : "#FFFFFF",
+                     borderColor: (isCompleted || isActive) ? "#FFD600" : "#E5E7EB",
+                     scale: isActive ? 1.1 : 1
+                   }}
+                   className={`w-10 h-10 rounded-full border-2 flex items-center justify-center font-black text-sm transition-all shadow-sm ${isActive ? 'shadow-brand-yellow/30' : ''}`}
+                >
+                  {isCompleted ? <Check className="w-5 h-5 text-brand-dark" /> : <span className={isActive ? 'text-brand-dark' : 'text-gray-400'}>{s.id}</span>}
+                </motion.div>
+                <span className={`text-[10px] font-black uppercase tracking-widest ${isActive ? 'text-brand-dark' : isCompleted ? 'text-brand-blue' : 'text-gray-400'}`}>
+                  {s.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-8">
+          {step === 'shipping' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-500">
+              <div>
+                <h3 className="font-black text-sm uppercase tracking-widest text-brand-dark mb-4 border-l-4 border-brand-yellow pl-4">Indirizzo di Spedizione</h3>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-6">Conferma dove vuoi ricevere la merce</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Email di Contatto</label>
+                  <input 
+                    type="email" 
+                    value={shippingForm.email}
+                    onChange={e => setShippingForm({...shippingForm, email: e.target.value})}
+                    placeholder="mario.rossi@esempio.it"
+                    className="w-full bg-white border border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-yellow transition-all"
+                  />
+                  <p className="text-[9px] text-gray-400 font-bold uppercase mt-1">L'email dell'account è preimpostata, puoi modificarla per la spedizione</p>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Nome Completo</label>
+                  <input 
+                    type="text" 
+                    value={shippingForm.name}
+                    onChange={e => setShippingForm({...shippingForm, name: e.target.value})}
+                    placeholder="Mario Rossi"
+                    className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-yellow transition-all"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Indirizzo e Numero Civico</label>
+                  <input 
+                    type="text" 
+                    value={shippingForm.street}
+                    onChange={e => setShippingForm({...shippingForm, street: e.target.value})}
+                    placeholder="Via delle Camelie, 12"
+                    className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-yellow transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Città</label>
+                  {!shippingForm.isCustomCity ? (
+                    <select 
+                      value={shippingForm.city}
+                      onChange={e => {
+                        if (e.target.value === "CUSTOM") {
+                          setShippingForm({...shippingForm, isCustomCity: true, city: ""});
+                        } else {
+                          setShippingForm({...shippingForm, city: e.target.value});
+                        }
+                      }}
+                      className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-yellow transition-all cursor-pointer"
+                    >
+                      <option value="">Seleziona...</option>
+                      {PREDEFINED_CITIES.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                      <option value="CUSTOM">-- Altra città (inserimento manuale) --</option>
+                    </select>
+                  ) : (
+                    <div className="relative">
+                      <input 
+                        type="text" 
+                        value={shippingForm.city}
+                        onChange={e => setShippingForm({...shippingForm, city: e.target.value})}
+                        placeholder="Es. Pomezia"
+                        className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-yellow transition-all"
+                      />
+                      <button 
+                        onClick={() => setShippingForm({...shippingForm, isCustomCity: false, city: ""})}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-black uppercase text-brand-blue"
+                      >
+                        Lista
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Provincia</label>
+                  <select 
+                    value={shippingForm.province}
+                    onChange={e => setShippingForm({...shippingForm, province: e.target.value})}
+                    className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-yellow transition-all cursor-pointer"
+                  >
+                    <option value="">Seleziona...</option>
+                    {ITALIAN_PROVINCES.map(p => (
+                      <option key={p.code} value={p.code}>{p.code} - {p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">CAP</label>
+                  <input 
+                    type="text" 
+                    value={shippingForm.zip}
+                    onChange={e => setShippingForm({...shippingForm, zip: e.target.value})}
+                    placeholder="00100"
+                    className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-yellow transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Cellulare / WhatsApp</label>
+                  <input 
+                    type="tel" 
+                    value={shippingForm.phone}
+                    onChange={e => setShippingForm({...shippingForm, phone: e.target.value})}
+                    placeholder="+39 333 1234567"
+                    className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-yellow transition-all"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Note per il Corriere (Opzionale)</label>
+                  <textarea 
+                    value={shippingForm.notes}
+                    onChange={e => setShippingForm({...shippingForm, notes: e.target.value})}
+                    placeholder="Es: Suonare al campanello Giallo, lasciare al portiere..."
+                    rows={2}
+                    className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-yellow transition-all resize-none"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 'methods' && (
+            <div className="space-y-6">
+              <h3 className="font-black text-sm uppercase tracking-widest text-brand-dark mb-4 border-l-4 border-brand-yellow pl-4">Scegli il metodo di pagamento</h3>
+              
+              <div className="grid gap-4">
+                {settings.stripeEnabled && (
+                  <button 
+                    onClick={() => setSelectedMethod('stripe')}
+                    className={`p-6 rounded-2xl border-2 transition-all flex items-center justify-between group ${selectedMethod === 'stripe' ? "border-brand-yellow bg-brand-yellow/5" : "border-gray-100 hover:border-gray-300"}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+                        <CreditCard className="w-6 h-6" />
+                      </div>
+                      <div className="text-left">
+                        <span className="block font-black text-brand-dark uppercase tracking-tight">Carta di Credito / GPay</span>
+                        <span className="text-[10px] text-secondary font-bold uppercase tracking-widest">Processato da Stripe</span>
+                      </div>
+                    </div>
+                    {selectedMethod === 'stripe' && <Check className="w-6 h-6 text-brand-yellow" />}
+                  </button>
+                )}
+
+                {settings.paypalEnabled && (
+                  <button 
+                    onClick={() => setSelectedMethod('paypal')}
+                    className={`p-6 rounded-2xl border-2 transition-all flex items-center justify-between group ${selectedMethod === 'paypal' ? "border-brand-blue bg-brand-blue/5" : "border-gray-100 hover:border-gray-300"}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600">
+                        <ExternalLink className="w-6 h-6" />
+                      </div>
+                      <div className="text-left">
+                        <span className="block font-black text-brand-dark uppercase tracking-tight">PayPal</span>
+                        <span className="text-[10px] text-secondary font-bold uppercase tracking-widest">Paga in sicurezza con il tuo conto</span>
+                      </div>
+                    </div>
+                    {selectedMethod === 'paypal' && <Check className="w-6 h-6 text-brand-blue" />}
+                  </button>
+                )}
+
+                {settings.bankEnabled && (
+                  <button 
+                    onClick={() => setSelectedMethod('bank')}
+                    className={`p-6 rounded-2xl border-2 transition-all flex items-center justify-between group ${selectedMethod === 'bank' ? "border-brand-yellow bg-brand-yellow/5" : "border-gray-100 hover:border-gray-300"}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-gray-50 rounded-xl flex items-center justify-center text-gray-600">
+                        <Globe className="w-6 h-6" />
+                      </div>
+                      <div className="text-left">
+                        <span className="block font-black text-brand-dark uppercase tracking-tight">Bonifico Bancario</span>
+                        <span className="text-[10px] text-secondary font-bold uppercase tracking-widest">L'ordine verrà elaborato alla ricezione</span>
+                      </div>
+                    </div>
+                    {selectedMethod === 'bank' && <Check className="w-6 h-6 text-brand-yellow" />}
+                  </button>
+                )}
+
+                {settings.codEnabled && (
+                  <button 
+                    onClick={() => setSelectedMethod('cod')}
+                    className={`p-6 rounded-2xl border-2 transition-all flex items-center justify-between group ${selectedMethod === 'cod' ? "border-orange-500 bg-orange-50/5" : "border-gray-100 hover:border-gray-300"}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-orange-50 rounded-xl flex items-center justify-center text-orange-600">
+                        <Truck className="w-6 h-6" />
+                      </div>
+                      <div className="text-left">
+                        <span className="block font-black text-brand-dark uppercase tracking-tight">Contrassegno (COD)</span>
+                        <span className="text-[10px] text-secondary font-bold uppercase tracking-widest">Paga in contanti alla consegna</span>
+                      </div>
+                    </div>
+                    {selectedMethod === 'cod' && <Check className="w-6 h-6 text-orange-500" />}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {step === 'details' && (
+            <div className="space-y-4 animate-in fade-in slide-in-from-right-8 duration-500 pb-6">
+
+              {/* PDF Proforma Document */}
+              <div id="bp-proforma-doc" className="bg-white border border-gray-100 rounded-2xl overflow-hidden p-6 space-y-5">
+                
+                {/* ── HEADER DOCUMENTO ── */}
+                <div className="flex justify-between items-start pb-4 border-b border-gray-100">
+                  <div className="flex items-center gap-3">
+                    <div className={companySettings.imageLogo ? "h-10" : "w-10 h-10 bg-brand-yellow rounded-lg flex items-center justify-center flex-shrink-0"}>
+                      {companySettings.imageLogo
+                        ? <img src={companySettings.imageLogo} alt="Logo" className="h-full object-contain" referrerPolicy="no-referrer" />
+                        : <span className="text-brand-dark font-black text-sm italic">{companySettings.logo}</span>}
+                    </div>
+                    <div>
+                      <p className="font-black text-brand-dark text-sm uppercase tracking-tight leading-none">{companySettings.name}</p>
+                      <p className="text-[8px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">{companySettings.legalName}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-base font-black text-brand-dark uppercase tracking-tight leading-none">Proforma</p>
+                    <p className="text-[9px] font-black text-brand-blue uppercase tracking-widest mt-1">ORDINE #{orderId}</p>
+                    <p className="text-[8px] text-gray-400 font-bold uppercase mt-0.5">{new Date().toLocaleDateString('it-IT')}</p>
+                  </div>
+                </div>
+
+                {/* ── ANAGRAFICA + SPEDIZIONE ── */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1">
+                      <User size={9} className="text-brand-yellow" /> Cliente
+                    </p>
+                    <p className="font-black text-brand-dark text-xs leading-tight">{shippingForm.name}</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">{shippingForm.email}</p>
+                    <p className="text-[10px] text-brand-blue font-bold">{shippingForm.phone}</p>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1">
+                      <MapPin size={9} className="text-brand-yellow" /> Destinazione
+                    </p>
+                    <p className="font-bold text-brand-dark text-xs leading-snug">{shippingForm.street}</p>
+                    <p className="text-[10px] text-gray-500">{shippingForm.zip} {shippingForm.city} ({shippingForm.province})</p>
+                    {shippingForm.notes && (
+                      <div className="mt-2 p-1.5 bg-yellow-50 rounded border border-yellow-100">
+                        <p className="text-[7px] font-black text-yellow-600 uppercase">Note Corriere</p>
+                        <p className="text-[9px] font-bold text-yellow-800 leading-tight italic">{shippingForm.notes}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── METODO PAGAMENTO ── */}
+                <div className="flex items-center justify-between bg-brand-dark text-white px-4 py-3 rounded-xl">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 bg-white/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                      {selectedMethod === 'stripe' && <CreditCard size={14} className="text-brand-yellow" />}
+                      {selectedMethod === 'paypal' && <ExternalLink size={14} className="text-brand-yellow" />}
+                      {selectedMethod === 'bank'   && <Globe size={14} className="text-brand-yellow" />}
+                      {selectedMethod === 'cod'    && <Truck size={14} className="text-brand-yellow" />}
+                    </div>
+                    <div>
+                      <p className="text-[7px] font-black text-gray-400 uppercase tracking-widest">Pagamento</p>
+                      <p className="text-xs font-black text-brand-yellow uppercase tracking-tight">
+                        {selectedMethod === 'stripe' ? 'Carta / GPay' : selectedMethod === 'paypal' ? 'PayPal' : selectedMethod === 'bank' ? 'Bonifico Bancario' : 'Contrassegno'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[7px] font-black text-yellow-400 border border-yellow-500/30 bg-yellow-500/10 px-2 py-0.5 rounded-full uppercase">In attesa</span>
+                </div>
+
+                {/* ── PRODOTTI ── */}
+                <div>
+                  <div className="grid grid-cols-12 text-[7px] font-black text-gray-400 uppercase tracking-widest px-2 pb-1 border-b border-gray-100">
+                    <div className="col-span-1"></div>
+                    <div className="col-span-6 pl-2">Articolo</div>
+                    <div className="col-span-2 text-center">Prezzo</div>
+                    <div className="col-span-1 text-center">Qt</div>
+                    <div className="col-span-2 text-right">Tot.</div>
+                  </div>
+                  {items.map(item => (
+                    <div key={item.id} className="grid grid-cols-12 items-center py-2 px-2 border-b border-gray-50 last:border-0">
+                      <div className="col-span-1">
+                        <div className="w-7 h-7 rounded bg-gray-50 border border-gray-100 overflow-hidden">
+                          {item.image && <img src={item.image} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />}
+                        </div>
+                      </div>
+                      <div className="col-span-6 pl-2">
+                        <p className="text-xs font-black text-brand-dark leading-tight">{item.name}</p>
+                        <p className="text-[7px] text-gray-400 font-bold uppercase">SKU-{item.id.padStart(4,'0')}</p>
+                      </div>
+                      <div className="col-span-2 text-center">
+                        <span className="text-xs font-bold text-brand-dark">€{item.price.toFixed(2)}</span>
+                      </div>
+                      <div className="col-span-1 text-center">
+                        <span className="w-5 h-5 rounded bg-gray-100 inline-flex items-center justify-center text-[10px] font-black text-brand-dark">{item.quantity}</span>
+                      </div>
+                      <div className="col-span-2 text-right">
+                        <span className="text-xs font-black text-brand-dark">€{(item.price * item.quantity).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* ── TOTALI ── */}
+                <div className="flex flex-col items-end gap-1.5 pt-3 border-t border-gray-100">
+                  <div className="flex justify-between w-56 text-[10px] font-bold text-gray-400 uppercase">
+                    <span>Subtotale</span><span className="text-brand-dark">€{total.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between w-56 text-[10px] font-bold text-green-600 uppercase">
+                    <span>Spedizione</span><span className="font-black">€0,00</span>
+                  </div>
+                  <div className="flex justify-between items-center w-56 bg-brand-yellow px-4 py-3 rounded-2xl mt-1">
+                    <span className="text-[10px] font-black text-brand-dark uppercase tracking-widest">Totale</span>
+                    <span className="text-lg font-black text-brand-dark">€{total.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* ── DATI PAGAMENTO (se Bonifico / COD) ── */}
+                {(selectedMethod === 'bank' || selectedMethod === 'cod') && (
+                  <div className={`p-4 rounded-xl border text-xs ${
+                    selectedMethod === 'bank' ? 'border-brand-yellow/30 bg-yellow-50/50' : 'border-orange-200 bg-orange-50'
+                  }`}>
+                    <p className="text-[8px] font-black uppercase tracking-widest mb-2 flex items-center gap-1">
+                      <Shield size={10} /> Dati per il pagamento
+                    </p>
+                    {selectedMethod === 'bank' ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <p className="text-[7px] text-gray-400 uppercase font-black mb-0.5">Beneficiario</p>
+                          <p className="font-black text-brand-dark text-xs uppercase">{settings.bankOwner || 'BESPOINT S.R.L.'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[7px] text-gray-400 uppercase font-black mb-0.5">IBAN</p>
+                          <p className="font-bold text-brand-dark text-[10px] tracking-tight select-all">{settings.bankIban || '—'}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-[10px] font-bold text-gray-600 uppercase">{settings.codNote || 'Pagamento in contanti alla consegna.'}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="no-print flex flex-col items-center gap-3 pt-2">
+                <button
+                  onClick={handlePrintProforma}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-brand-dark text-brand-yellow rounded-xl text-xs font-black uppercase tracking-widest hover:bg-black transition-all"
+                >
+                  <FileText size={14} />
+                  Stampa / Salva PDF
+                </button>
+                <p className="text-[9px] text-gray-400 font-bold italic text-center max-w-xs">
+                  Proforma generata dal sistema. Fattura elettronica emessa a spedizione avvenuta.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="p-8 bg-gray-50 border-t border-gray-100 mt-auto">
+          {!currentUser ? (
+              <div className="text-center space-y-4">
+                <p className="text-sm font-bold text-brand-dark uppercase tracking-tighter">🔒 Effettua il login o registrati per completare l'acquisto</p>
+                <button 
+                  onClick={onAuthOpen}
+                  className="w-full h-16 rounded-2xl bg-brand-yellow text-brand-dark font-black text-sm uppercase tracking-widest transition-all shadow-xl shadow-brand-yellow/20 hover:bg-brand-orange"
+                >
+                  Registrati ora
+                </button>
+              </div>
+          ) : step === 'shipping' ? (
+            <button 
+              disabled={!shippingForm.street || !shippingForm.city || !shippingForm.province || !shippingForm.phone}
+              onClick={() => setStep('methods')}
+              className="w-full h-16 rounded-2xl bg-brand-dark text-brand-yellow font-black text-sm uppercase tracking-widest transition-all shadow-xl shadow-brand-dark/20 hover:bg-black disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed"
+            >
+              Prosegui al Pagamento
+            </button>
+          ) : (
+            <div className="space-y-4">
+                <button 
+                  onClick={() => setStep('shipping')}
+                  className="w-full text-[10px] font-black uppercase tracking-widest text-secondary hover:text-brand-dark transition-colors"
+                >
+                  Modifica Indirizzo di Spedizione
+                </button>
+                <button 
+                  disabled={!selectedMethod || isProcessing}
+                  onClick={() => {
+                    if (step === 'methods') {
+                      setStep('details');
+                    } else {
+                      handleConfirmOrder();
+                    }
+                  }}
+                  className={`w-full h-16 rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-3 ${selectedMethod ? "bg-brand-dark text-brand-yellow hover:bg-black active:scale-[0.98] shadow-brand-dark/20" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
+                >
+                  {isProcessing && <RefreshCw className="w-5 h-5 animate-spin" />}
+                  {step === 'methods' ? "Vedi Riepilogo" : "Conferma Ordine"}
+                </button>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </>
+  );
+};
+
+const CartDrawer = ({ items, onClose, onUpdateQuantity, onRemove, onCheckout }: { 
   items: CartItem[]; 
   onClose: () => void;
   onUpdateQuantity: (id: string, delta: number) => void;
   onRemove: (id: string) => void;
+  onCheckout: () => void;
   key?: string;
 }) => {
   const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -715,7 +1947,10 @@ const CartDrawer = ({ items, onClose, onUpdateQuantity, onRemove }: {
               <span className="text-gray-500 font-medium">Totale</span>
               <span className="text-2xl font-bold">€{total.toFixed(2)}</span>
             </div>
-            <button className="w-full bg-brand-yellow hover:bg-brand-orange text-brand-dark h-14 rounded-2xl font-bold text-lg active:scale-95 transition-transform">
+            <button 
+              onClick={onCheckout}
+              className="w-full bg-brand-yellow hover:bg-brand-orange text-brand-dark h-14 rounded-2xl font-bold text-lg active:scale-95 transition-transform"
+            >
               Procedi al Pagamento
             </button>
           </motion.div>
@@ -725,7 +1960,7 @@ const CartDrawer = ({ items, onClose, onUpdateQuantity, onRemove }: {
   );
 };
 
-const SideMenu = ({ isOpen, onClose, onSelectCategory, companySettings, pageSettings, onOpenProfile, onOpenOrders, onLogout }: { isOpen: boolean; onClose: () => void; onSelectCategory: (c: string) => void; companySettings: any; pageSettings: any; onOpenProfile?: () => void; onOpenOrders?: () => void; onLogout?: () => void; key?: string }) => {
+const SideMenu = ({ isOpen, onClose, onSelectCategory, companySettings, pageSettings, products = [], onOpenProfile, onOpenOrders, onLogout }: { isOpen: boolean; onClose: () => void; onSelectCategory: (c: string) => void; companySettings: any; pageSettings: any; products?: any[]; onOpenProfile?: () => void; onOpenOrders?: () => void; onLogout?: () => void; key?: string }) => {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -785,19 +2020,38 @@ const SideMenu = ({ isOpen, onClose, onSelectCategory, companySettings, pageSett
 
               <div className="space-y-4">
                 <h3 className="text-xs font-black text-brand-yellow uppercase tracking-widest">Categorie</h3>
-                {pageSettings.categories.map(cat => (
-                  <button 
-                    key={cat} 
-                    onClick={() => {
-                      onSelectCategory(cat);
-                      onClose();
-                    }}
-                    className="flex items-center justify-between w-full p-3 hover:bg-white/5 rounded-xl transition-colors"
-                  >
-                    <span className="font-bold">{cat}</span>
-                    <ChevronRight className="w-4 h-4 text-white/40" />
-                  </button>
-                ))}
+                {/* Icona Home — ritorna alla home */}
+                <button
+                  onClick={() => {
+                    onSelectCategory("Tutti");
+                    onClose();
+                  }}
+                  className="flex items-center gap-3 w-fit p-3 hover:bg-white/10 rounded-xl transition-colors"
+                  title="Torna alla Home"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-brand-yellow flex items-center justify-center flex-shrink-0 shadow-lg shadow-brand-yellow/20">
+                    <Home className="w-5 h-5 text-brand-dark" />
+                  </div>
+                </button>
+                {pageSettings.categories.filter((cat: string) => cat !== "Tutti").map((cat: string) => {
+                  const count = products.filter(p => p.category === cat).length;
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => {
+                        onSelectCategory(cat);
+                        onClose();
+                      }}
+                      className="flex items-center justify-between w-full p-3 hover:bg-white/5 rounded-xl transition-colors"
+                    >
+                      <span className="font-bold">{cat}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-black text-brand-yellow bg-white/10 px-2 py-0.5 rounded-full">{count}</span>
+                        <ChevronRight className="w-4 h-4 text-white/40" />
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
 
               <div className="space-y-4">
@@ -849,7 +2103,7 @@ const PROMO_ITEMS = [
   { id: 8, title: "Accessori", subtitle: "Tutto il resto", color: "bg-gray-800", seed: "acc" },
 ];
 
-const SlideSection = ({ slides }: { slides: any[] }) => {
+const SlideSection = ({ slides, darken = false }: { slides: any[], darken?: boolean }) => {
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
@@ -876,6 +2130,11 @@ const SlideSection = ({ slides }: { slides: any[] }) => {
             transition={{ duration: 0.8 }}
             className="w-full h-full"
           >
+            {/* Dark Overlay (Triggle) */}
+            {darken && (
+              <div className="absolute inset-0 bg-black/40 z-10 pointer-events-none" />
+            )}
+
             {currentSlide.link ? (
               <a href={currentSlide.link} className="block w-full h-full">
                 {currentSlide.url && (
@@ -938,29 +2197,107 @@ const SlideSection = ({ slides }: { slides: any[] }) => {
   );
 };
 
-export default function App() {
-  const [selectedCategory, setSelectedCategory] = useState("Tutti");
-  const [selectedSubcategory, setSelectedSubcategory] = useState("Tutti");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [isCartOpen, setIsCartOpen] = useState(false);
-  const [isAdminOpen, setIsAdminOpen] = useState(true);
+export default function App({ hideStorefront = false }: { hideStorefront?: boolean }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+
+  const { 
+    products, setProducts,
+    selectedCategory, setSelectedCategory,
+    selectedSubcategory, setSelectedSubcategory,
+    selectedProduct, handleProductSelect: setSelectedProduct,
+    searchQuery, setSearchQuery,
+    selectedBrand, setSelectedBrand,
+    isAdminOpen, setIsAdminOpen,
+    sortBy, setSortBy,
+    isGlobalFiltersExpanded, setIsGlobalFiltersExpanded,
+    cart, setCart,
+    isCartOpen, setIsCartOpen,
+    isCheckoutOpen, setIsCheckoutOpen,
+    paymentSettings, setPaymentSettings,
+    orders, setOrders,
+    isAuthOpen, setIsAuthOpen,
+    authStep, setAuthStep,
+    currentUser, setCurrentUser,
+    pageSettings, setPageSettings,
+    companySettings, setCompanySettings,
+    returnRequests, setReturnRequests,
+    productReviews, setProductReviews,
+    favorites, toggleFavorite,
+    toasts, addToast, dismissToast,
+    isDesktop,
+    adminActiveTab, setAdminActiveTab,
+    isSideMenuOpen, setIsSideMenuOpen
+  } = useApp();
+
+  // --- Sincronizzazione URL -> Stato ---
+  useEffect(() => {
+    const path = location.pathname;
+    const parts = path.split('/').filter(Boolean);
+
+    if (parts[0] === 'category') {
+      const cat = decodeURIComponent(parts[1]);
+      if (cat !== selectedCategory) setSelectedCategory(cat);
+      if (selectedProduct) setSelectedProduct(null);
+    } else if (parts[0] === 'product') {
+      const productId = parts[1];
+      const product = products.find(p => p.id === productId);
+      if (product) {
+        if (!selectedProduct || selectedProduct.id !== productId) {
+          setSelectedProduct(product);
+        }
+        // SEO: Se lo slug manca o è diverso, reindirizziamo alla URL corretta
+        const correctSlug = slugify(product.name);
+        if (parts[2] !== correctSlug) {
+          navigate(`/product/${productId}/${correctSlug}`, { replace: true });
+        }
+      } else if (products.length > 0) {
+        // Prodotto non trovato: torna alla home invece di mostrare pagina bianca
+        navigate('/', { replace: true });
+      }
+    } else if (path === '/') {
+      if (selectedCategory !== "Tutti") setSelectedCategory("Tutti");
+      if (selectedProduct) setSelectedProduct(null);
+    }
+  }, [location.pathname, products]);
+
+  const handleCategorySelect = (cat: string) => {
+    if (cat === "Tutti") {
+      navigate("/");
+      setSelectedSubcategory("Tutti");
+    } else {
+      navigate(`/category/${encodeURIComponent(cat)}`);
+      const subcats = pageSettings.subcategories[cat] || [];
+      if (subcats.length > 0) {
+        setSelectedSubcategory(subcats[0]);
+      } else {
+        setSelectedSubcategory("Tutti");
+      }
+    }
+  };
+
+  const handleProductSelect = (p: Product | null) => {
+    if (p) navigate(`/product/${p.id}/${slugify(p.name)}`);
+    else {
+      setSelectedProduct(null);
+      if (selectedCategory && selectedCategory !== "Tutti") navigate(`/category/${encodeURIComponent(selectedCategory)}`);
+      else navigate("/");
+    }
+  };
+
+  const [adminSearchQuery, setAdminSearchQuery] = useState("");
+  const [showFeaturedOnly, setShowFeaturedOnly] = useState(false);
+  const [showSpecialOnly, setShowSpecialOnly] = useState(false);
+  const [adminCategoryFilter, setAdminCategoryFilter] = useState("Tutti");
+  const [adminBrandFilter, setAdminBrandFilter] = useState("Tutti");
+  const [adminChannelFilter, setAdminChannelFilter] = useState("Tutti"); // Tutti, Web, Amazon, Ebay
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   
-  // Auth State
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [authStep, setAuthStep] = useState<'email' | 'login' | 'register' | 'profile' | 'edit_profile' | 'orders' | 'support'>('email');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authName, setAuthName] = useState('');
   const [authError, setAuthError] = useState('');
-  const [currentUser, setCurrentUser] = useState<any>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('bespoint_current_user');
-      return saved ? JSON.parse(saved) : null;
-    }
-    return null;
-  });
   
   const [profileEditForm, setProfileEditForm] = useState({
     nameFirst: '',
@@ -988,20 +2325,42 @@ export default function App() {
     }
   }, [currentUser, authStep]);
   const [isMobileAdminMenuOpen, setIsMobileAdminMenuOpen] = useState(false);
-  const [returnRequests, setReturnRequests] = useState<any[]>(() => {
-    const saved = localStorage.getItem('bespoint_returns');
-    return saved ? JSON.parse(saved) : [];
-  });
+
+  const [selectedReviewItem, setSelectedReviewItem] = useState<any>(null);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [isReviewSubmitting, setIsReviewSubmitting] = useState(false);
   const [showAllSeoCategories, setShowAllSeoCategories] = useState(false);
-  const [activeUserView, setActiveUserView] = useState<'profile' | 'returns' | 'return_form'>('profile');
+  const [activeUserView, setActiveUserView] = useState<'profile' | 'returns' | 'return_form' | 'review_form' | 'menu' | 'favorites'>('profile');
+  const [favoritesViewMode, setFavoritesViewMode] = useState<'carousel' | 'grid'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [isAiSuggesting, setIsAiSuggesting] = useState(false);
   const [selectedReturnOrder, setSelectedReturnOrder] = useState<any>(null);
+  const [selectedReturnItem, setSelectedReturnItem] = useState<any>(null);
+  const [selectedReturnDetail, setSelectedReturnDetail] = useState<any>(null);
+  const [userReturnMsg, setUserReturnMsg] = useState('');
+  const [returnReason, setReturnReason] = useState('');
+  const [isReturnSubmitting, setIsReturnSubmitting] = useState(false);
+  const [returnQty, setReturnQty] = useState(1);
+  const [returnPhotos, setReturnPhotos] = useState<string[]>([]);
+
+  const parseOrderDate = (dStr: string) => {
+    const months: any = { jan:0,gen:0,feb:1,mar:2,apr:3,may:4,mag:4,jun:5,giu:5,jul:6,lug:6,aug:7,ago:7,sep:8,set:8,oct:9,ott:9,nov:10,dec:11,dic:11 };
+    const parts = dStr.replace('.', '').split(' ');
+    if (parts.length !== 3) return new Date();
+    return new Date(parseInt(parts[2]), months[parts[1].toLowerCase().substring(0,3)] || 0, parseInt(parts[0]));
+  };
 
   useEffect(() => {
     localStorage.setItem('bespoint_returns', JSON.stringify(returnRequests));
   }, [returnRequests]);
+  const [profileSearchQuery, setProfileSearchQuery] = useState('');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [adminActiveTab, setAdminActiveTab] = useState<'dashboard' | 'company' | 'slides' | 'categories' | 'seo' | 'marketing' | 'analytics' | 'products' | 'marketplaces' | 'orders' | 'couriers'>('dashboard');
+  const [isGeneralSaveSuccess, setIsGeneralSaveSuccess] = useState(false);
+  const [availableVariants, setAvailableVariants] = useState<string[]>(['Colore', 'Taglia']);
+  const [selectedReturnId, setSelectedReturnId] = useState<string | null>(null);
   const [adminProductView, setAdminProductView] = useState<'list' | 'single' | 'mass'>('list');
+  const [editingAdminProduct, setEditingAdminProduct] = useState<Product | null>(null);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [adminTopIdx, setAdminTopIdx] = useState(0);
   const [adminMidIdx, setAdminMidIdx] = useState(0);
@@ -1011,42 +2370,85 @@ export default function App() {
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [addingSubcategoryTo, setAddingSubcategoryTo] = useState<string | null>(null);
   const [newSubcategoryName, setNewSubcategoryName] = useState("");
-  const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
-  
-  useEffect(() => {
-    const handleResize = () => setIsDesktop(window.innerWidth >= 1024);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
   const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
-  const [isAiSuggesting, setIsAiSuggesting] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<{ categories: string[], subcategories: Record<string, string[]> } | null>(null);
+
+  const adminUniqueBrands = useMemo(() => Array.from(new Set(products.map(p => p.brand).filter(Boolean))).sort() as string[], [products]);
+  const [adminConfirmAction, setAdminConfirmAction] = useState<{ active: boolean, title: string, message: string, onConfirm: () => void, color: string } | null>(null);
+
+  const hardReset = () => {
+    // Clear localStorage
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('bespoint_') || key === 'companySettings' || key === 'paymentSettings' || key === 'pageSettings' || key === 'bespoint_users') {
+        localStorage.removeItem(key);
+      }
+    });
+    window.location.reload(); 
+  };
+
+  const populateDemoData = () => {
+    setProducts(prev => [...prev, ...PRODUCTS.map(p => ({ ...p, id: (products.length + Math.random() * 1000).toString() }))]);
+    setOrders(prev => [...prev, ...INITIAL_ORDERS.map(o => ({ ...o, id: `BP-DEMO-${Math.floor(Math.random() * 1000)}` }))]);
+    
+    const demoReviews = [
+      { id: "rev-d1", productId: "3", customerName: "Marco Rossi", rating: 5, comment: "Ottimo prodotto!", date: new Date().toLocaleDateString(), status: 'approved' },
+      { id: "rev-d2", productId: "1", customerName: "Luca Bianchi", rating: 4, comment: "Spedizione veloce.", date: new Date().toLocaleDateString(), status: 'approved' }
+    ];
+    setProductReviews(prev => [...prev, ...demoReviews]);
+    addToast("Dati dimostrativi pre-caricati con successo.", "success");
+  };
+
+  const handleUserReturnMessage = (requestId: string, text: string) => {
+    if (!text.trim()) return;
+    setReturnRequests(prev => prev.map(req => {
+      if (req.id === requestId) {
+        const updated = {
+          ...req,
+          messages: [...req.messages, { role: 'user', text, date: new Date().toLocaleString('it-IT') }]
+        };
+        if (selectedReturnDetail?.id === requestId) setSelectedReturnDetail(updated);
+        return updated;
+      }
+      return req;
+    }));
+    setUserReturnMsg('');
+  };
+
+  const handleReturnPhotoMessage = (requestId: string, url: string) => {
+    setReturnRequests(prev => prev.map(req => {
+      if (req.id === requestId) {
+        const updated = {
+          ...req,
+          photos: [...(req.photos || []), url],
+          messages: [...req.messages, { role: 'user', text: "Nuova foto caricata per la pratica", date: new Date().toLocaleString('it-IT') }]
+        };
+        if (selectedReturnDetail?.id === requestId) setSelectedReturnDetail(updated);
+        return updated;
+      }
+      return req;
+    }));
+    addToast("Foto aggiunta con successo alla pratica!", "success");
+  };
   
-  const [companySettings, setCompanySettings] = useState(() => {
-    const saved = localStorage.getItem('companySettings');
-    return saved ? JSON.parse(saved) : {
-      logo: "B",
-      imageLogo: "",
-      favicon: "",
-      name: "BesPoint",
-      legalName: "Bespoint S.r.l.",
-      vatNumber: "01234567890",
-      sdiCode: "A1B2C3D",
-      legalAddress: "Via della Tecnologia 123, Roma",
-      phone: "+39 06 1234567",
-      email: "info@bespoint.it",
-      bioLink: "linktr.ee/bespoint",
-      mission: "La tecnologia che si adatta al tuo stile di vita. Scopri l'innovazione senza compromessi.",
-      socials: {
-        facebook: "https://facebook.com/bespoint",
-        instagram: "https://instagram.com/bespoint",
-        twitter: "https://twitter.com/bespoint"
-      },
-      googleVerificationTag: "",
-      googleAnalyticsSnippet: "",
-      adsTxtContent: "google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0"
-    };
-  });
+  const handleShare = async (product: Product) => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: product.name,
+          text: `Guarda questo prodotto su BesPoint: ${product.name}`,
+          url: window.location.href,
+        });
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          console.error("Errore durante la condivisione", err);
+        }
+      }
+    } else {
+      navigator.clipboard.writeText(window.location.href).then(() => {
+        addToast("L'indirizzo del sito è stato copiato negli appunti!", "success");
+      });
+    }
+  };
 
   // Dynamic Favicon Update
   useEffect(() => {
@@ -1068,150 +2470,16 @@ export default function App() {
     }
   }, [companySettings.name]);
 
-  const [pageSettings, setPageSettings] = useState(() => {
-    const saved = localStorage.getItem('pageSettings');
-    const defaultBanners: Record<string, any> = {};
-    const defaultHomeSlides: any[] = [];
+  const slugify = (text: string) => {
+    return text
+      .toString()
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^\w-]+/g, '')
+      .replace(/--+/g, '-');
+  };
 
-    // Use CATEGORIES and SUBCATEGORIES from data.ts as initial defaults if not saved
-    const initialCategories = CATEGORIES;
-    const initialSubcategories = SUBCATEGORIES;
-
-    initialCategories.filter(c => c !== "Tutti").forEach((cat, index) => {
-      defaultBanners[cat] = { 
-        url: `https://picsum.photos/seed/${cat.toLowerCase()}/1920/600`, 
-        alt: cat, 
-        title: cat,
-        link: "" 
-      };
-
-      // Top Slide - Only for the first category
-      if (index === 0) {
-        defaultHomeSlides.push({
-          id: `top-${cat}`,
-          url: `https://picsum.photos/seed/${cat.toLowerCase()}-top/1920/1080`,
-          alt: `Scopri la nostra selezione di ${cat}`,
-          title: cat,
-          link: "",
-          position: "home_top"
-        });
-      }
-
-      // Middle Slide - Only for the first category (as per request to delete 2-6)
-      if (index === 0) {
-        defaultHomeSlides.push({
-          id: `mid-${cat}`,
-          url: `https://picsum.photos/seed/${cat.toLowerCase()}-mid/1920/600`,
-          alt: `Le migliori offerte per ${cat}`,
-          title: `Specialisti in ${cat}`,
-          link: "",
-          position: "home_middle"
-        });
-      }
-
-      // Bottom Slide - Only for the first category (as per request to delete 2-5)
-      if (index === 0) {
-        defaultHomeSlides.push({
-          id: `bot-${cat}`,
-          url: `https://picsum.photos/seed/${cat.toLowerCase()}-bot/1920/600`,
-          alt: `Qualità garantita per ${cat}`,
-          title: `Il meglio di ${cat}`,
-          link: "",
-          position: "home_bottom"
-        });
-      }
-    });
-
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      
-      // Ensure categories and subcategories exist in saved settings
-      if (!parsed.categories) parsed.categories = initialCategories;
-      if (!parsed.subcategories) parsed.subcategories = initialSubcategories;
-
-      // Ensure all current categories exist in saved settings banners
-      parsed.categories.filter((c: string) => c !== "Tutti").forEach((cat: string) => {
-        if (!parsed.categoryBanners[cat]) {
-          parsed.categoryBanners[cat] = { 
-            url: `https://picsum.photos/seed/${cat.toLowerCase()}/1920/600`, 
-            alt: cat, 
-            title: cat,
-            link: "" 
-          };
-        }
-      });
-
-      // Prune ALL slide positions to keep only the first one (as per multiple requests to delete 2-6, 2-5)
-      
-      // Prune top slides
-      const topSlides = parsed.homeSlides.filter((s: any) => s.position === 'home_top' || !s.position);
-      if (topSlides.length > 1) {
-        const otherSlides = parsed.homeSlides.filter((s: any) => s.position !== 'home_top' && s.position);
-        parsed.homeSlides = [topSlides[0], ...otherSlides];
-      }
-
-      // Prune middle slides
-      const midSlides = parsed.homeSlides.filter((s: any) => s.position === 'home_middle');
-      if (midSlides.length > 1) {
-        const otherSlides = parsed.homeSlides.filter((s: any) => s.position !== 'home_middle');
-        parsed.homeSlides = [midSlides[0], ...parsed.homeSlides.filter((s: any) => s.position !== 'home_middle')];
-      }
-
-      // Prune bottom slides
-      const botSlides = parsed.homeSlides.filter((s: any) => s.position === 'home_bottom');
-      if (botSlides.length > 1) {
-        const otherSlides = parsed.homeSlides.filter((s: any) => s.position !== 'home_bottom');
-        parsed.homeSlides = [botSlides[0], ...parsed.homeSlides.filter((s: any) => s.position !== 'home_bottom')];
-      }
-
-      if (!parsed.linkRapidi) {
-        parsed.linkRapidi = [
-          { id: '1', title: "Nuovi Arrivi", subtitle: "Scopri la collezione", color: "bg-brand-blue", seed: "gadgets", category: "Tutti", subcategory: "Tutti" },
-          { id: '2', title: "Best Seller", subtitle: "I più amati", color: "bg-brand-yellow", seed: "tech-best", category: "Tutti", subcategory: "Tutti" },
-          { id: '3', title: "Sconti Flash", subtitle: "Solo per oggi", color: "bg-red-500", seed: "flash", category: "Tutti", subcategory: "Tutti" },
-          { id: '4', title: "Illuminazione", subtitle: "Luce perfetta", color: "bg-green-600", seed: "light", category: "Illuminazione", subcategory: "Tutti" },
-          { id: '5', title: "Audio Pro", subtitle: "Suono puro", color: "bg-purple-600", seed: "audio", category: "Elettronica", subcategory: "Audio" },
-          { id: '6', title: "Smart Home", subtitle: "Casa connessa", color: "bg-orange-500", seed: "smart", category: "Sicurezza", subcategory: "Tutti" },
-        ];
-      }
-
-      return parsed;
-    }
-
-    return {
-      homeSlides: defaultHomeSlides,
-      categoryBanners: defaultBanners,
-      categories: initialCategories,
-      subcategories: initialSubcategories,
-      linkRapidi: [
-        { id: '1', title: "Nuovi Arrivi", subtitle: "Scopri la collezione", color: "bg-brand-blue", seed: "gadgets", category: "Tutti", subcategory: "Tutti" },
-        { id: '2', title: "Best Seller", subtitle: "I più amati", color: "bg-brand-yellow", seed: "tech-best", category: "Tutti", subcategory: "Tutti" },
-        { id: '3', title: "Sconti Flash", subtitle: "Solo per oggi", color: "bg-red-500", seed: "flash", category: "Tutti", subcategory: "Tutti" },
-        { id: '4', title: "Illuminazione", subtitle: "Luce perfetta", color: "bg-green-600", seed: "light", category: "Illuminazione", subcategory: "Tutti" },
-        { id: '5', title: "Audio Pro", subtitle: "Suono puro", color: "bg-purple-600", seed: "audio", category: "Elettronica", subcategory: "Audio" },
-        { id: '6', title: "Smart Home", subtitle: "Casa connessa", color: "bg-orange-500", seed: "smart", category: "Sicurezza", subcategory: "Tutti" },
-      ]
-    };
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('companySettings', JSON.stringify(companySettings));
-    } catch (e) {
-      console.error("Storage Error (Company):", e);
-    }
-  }, [companySettings]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('pageSettings', JSON.stringify(pageSettings));
-    } catch (e) {
-      console.error("Storage Error (Page):", e);
-      if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
-        alert("Errore di memoria: La foto caricata è troppo grande o lo spazio del browser è esaurito. Riduci la dimensione delle immagini.");
-      }
-    }
-  }, [pageSettings]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, callback: (url: string) => void) => {
     const file = e.target.files?.[0];
@@ -1296,14 +2564,12 @@ export default function App() {
       setAiSuggestions(suggestions);
     } catch (error) {
       console.error("AI Suggestion error:", error);
-      alert("Errore durante il suggerimento AI. Riprova.");
+      addToast("Errore durante il suggerimento AI. Riprova.", "error");
     } finally {
       setIsAiSuggesting(false);
     }
   };
 
-  const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
-  const [sortBy, setSortBy] = useState("newest");
   const [heroIndex, setHeroIndex] = useState(0);
   const [cartTrigger, setCartTrigger] = useState(0);
   const [isHeaderHidden, setIsHeaderHidden] = useState(false);
@@ -1336,15 +2602,40 @@ export default function App() {
   }, [topSlides.length]);
 
   useEffect(() => {
+    if (isAdminOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isAdminOpen]);
+
+  useEffect(() => {
     setSelectedSubcategory("Tutti");
   }, [selectedCategory]);
 
+  const featuredProducts = useMemo(() => {
+    return products.filter(p => p.isFeatured).slice(0, pageSettings.maxFeatured || 8);
+  }, [products, cartTrigger, pageSettings.maxFeatured]);
+
+  const specialCategoryProducts = useMemo(() => {
+    if (!pageSettings.isSpecialCategoryEnabled) return [];
+    return products.filter(p => p.isSpecialPromotion)
+      .slice(0, pageSettings.specialCategoryMax || 8);
+  }, [products, pageSettings.isSpecialCategoryEnabled, pageSettings.specialCategoryMax, cartTrigger]);
+
   const filteredProducts = useMemo(() => {
-    const filtered = PRODUCTS.filter(p => {
+    const filtered = products.filter(p => {
       const matchesCategory = selectedCategory === "Tutti" || p.category === selectedCategory;
       const matchesSubcategory = selectedSubcategory === "Tutti" || p.subcategory === selectedSubcategory;
+      const matchesBrand = selectedBrand === "Tutti" || p.brand === selectedBrand;
       const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesCategory && matchesSubcategory && matchesSearch;
+      // Il filtro stock è rimosso: tutti i prodotti vengono mostrati indipendentemente dalla giacenza
+      const matchesFeatured = !showFeaturedOnly || p.isFeatured;
+      const matchesSpecial = !showSpecialOnly || p.isSpecialPromotion;
+      return matchesCategory && matchesSubcategory && matchesBrand && matchesSearch && matchesFeatured && matchesSpecial;
     });
 
     return [...filtered].sort((a, b) => {
@@ -1354,7 +2645,7 @@ export default function App() {
       if (sortBy === "newest") return parseInt(b.id) - parseInt(a.id);
       return 0;
     });
-  }, [selectedCategory, selectedSubcategory, searchQuery, sortBy]);
+  }, [products, selectedCategory, selectedSubcategory, selectedBrand, searchQuery, sortBy, cartTrigger]);
 
   // --- Simulated Backend Auth Methods ---
   const getUsers = () => JSON.parse(localStorage.getItem('bespoint_users') || '[]');
@@ -1477,6 +2768,15 @@ export default function App() {
     setCartTrigger(prev => prev + 1);
   };
 
+
+  const getProductCount = (category: string, subcategory?: string | null) => {
+    return products.filter(p => {
+      const matchesCat = p.category === category || category === "Tutti";
+      const matchesSub = !subcategory || subcategory === "Tutti" || p.subcategory === subcategory;
+      return matchesCat && matchesSub;
+    }).length;
+  };
+
   const updateQuantity = (id: string, delta: number) => {
     setCart(prev => prev.map(item => {
       if (item.id === id) {
@@ -1500,537 +2800,803 @@ export default function App() {
   const heroY = useTransform(smoothScrollY, [0, 150], [0, -40]);
 
   // Header animations with springs for "weight"
-  const headerTopHeightRaw = useTransform(smoothScrollY, [0, 100], [64, 0]);
-  const headerTopHeight = useSpring(isDesktop ? useTransform(smoothScrollY, [0, 1], [64, 64]) : headerTopHeightRaw, { stiffness: 400, damping: 40 });
+  // Header animations - define all transforms unconditionally to follow Rules of Hooks
+  const legacyDesktopHeight = useTransform(smoothScrollY, [0, 1], [64, 64]);
+  const legacyMobileHeight = useTransform(smoothScrollY, [0, 100], [64, 0]);
+  const headerTopHeight = useSpring(isDesktop ? legacyDesktopHeight : legacyMobileHeight, { stiffness: 400, damping: 40 });
   
-  const headerTopOpacityRaw = useTransform(smoothScrollY, [0, 80], [1, 0]);
-  const headerTopOpacity = useSpring(isDesktop ? useTransform(smoothScrollY, [0, 1], [1, 1]) : headerTopOpacityRaw, { stiffness: 400, damping: 40 });
+  const legacyDesktopOpacity = useTransform(smoothScrollY, [0, 1], [1, 1]);
+  const legacyMobileOpacity = useTransform(smoothScrollY, [0, 80], [1, 0]);
+  const headerTopOpacity = useSpring(isDesktop ? legacyDesktopOpacity : legacyMobileOpacity, { stiffness: 400, damping: 40 });
   
-  const headerTopScaleRaw = useTransform(smoothScrollY, [0, 100], [1, 0.98]);
-  const headerTopScale = useSpring(isDesktop ? useTransform(smoothScrollY, [0, 1], [1, 1]) : headerTopScaleRaw, { stiffness: 400, damping: 40 });
+  const legacyDesktopScale = useTransform(smoothScrollY, [0, 1], [1, 1]);
+  const legacyMobileScale = useTransform(smoothScrollY, [0, 100], [1, 0.98]);
+  const headerTopScale = useSpring(isDesktop ? legacyDesktopScale : legacyMobileScale, { stiffness: 400, damping: 40 });
 
   const headerShadowOpacity = useTransform(smoothScrollY, [0, 100], [0, 0.2]);
-  const headerBgColor = useTransform(smoothScrollY, [0, 100], ["rgba(10, 10, 10, 1)", "rgba(10, 10, 10, 0.95)"]);
-  
-  const parallaxY = useTransform(smoothScrollY, [500, 1500], [0, -100]);
 
   return (
-    <div className="min-h-screen pb-24 bg-gray-100">
-      {/* Top Bar (Amazon Style) */}
-      <div className="bg-gradient-to-r from-neutral-900 via-black to-neutral-900 border-b border-gray-800 text-white px-4 py-2 flex items-center justify-between text-xs font-medium">
-        <div className="flex items-center gap-2">
-          <span>Consegna a Massimo - {companySettings.legalAddress.split(',').pop()?.trim()}</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <span>Aiuto</span>
-          <span>Resi e Ordini</span>
-        </div>
-      </div>
-
-      {/* Header */}
-      <motion.header 
-        style={{ 
-          boxShadow: useTransform(headerShadowOpacity, (v) => `0 10px 30px -10px rgba(0,0,0,${v})`)
-        }}
-        className="sticky top-0 z-40 bg-gradient-to-b from-[#111111] to-black"
-      >
-        {/* Animated Top Section (Logo, Desktop Search, Actions) */}
-        <motion.div 
-          style={{ height: headerTopHeight, opacity: headerTopOpacity, scale: headerTopScale }}
-          className="px-4 flex items-center justify-between gap-4 overflow-hidden origin-top"
-        >
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => setIsSideMenuOpen(true)}
-              className="text-white hover:text-brand-yellow transition-colors"
-            >
-              <Menu className="w-7 h-7" />
-            </button>
-            <div className="flex items-center gap-3">
-              <div className={companySettings.imageLogo ? "h-10 flex items-center" : "w-8 h-8 bg-brand-yellow rounded-lg flex items-center justify-center overflow-hidden"}>
-                {companySettings.imageLogo ? (
-                  <img src={companySettings.imageLogo} alt="Logo" className="h-full object-contain" referrerPolicy="no-referrer" />
-                ) : companySettings.logo.startsWith('http') ? (
-                  <img src={companySettings.logo} alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                ) : (
-                  <span className="text-brand-dark font-black text-lg">{companySettings.logo}</span>
-                )}
+    <div className={hideStorefront ? "" : "min-h-screen pb-24 bg-gray-100"}>
+      {!hideStorefront && (
+        <>
+          {/* Top Bar */}
+          <div className="bg-gradient-to-r from-neutral-900 via-black to-neutral-900 border-b border-gray-800 text-white overflow-hidden relative" style={{ height: '36px' }}>
+            {pageSettings.topBarMode === 'image' && pageSettings.topBarImage ? (
+              <img src={pageSettings.topBarImage} className="w-full h-full object-cover" />
+            ) : pageSettings.topBarMode === 'marquee' ? (
+              <div className="h-full flex items-center">
+                <motion.div
+                  animate={{ x: ["100%", "-100%"] }}
+                  transition={{ duration: pageSettings.topBarMarqueeSpeed || 20, repeat: Infinity, ease: "linear" }}
+                  className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.2em] px-4"
+                >
+                  {pageSettings.topBarMarqueeText || "Consegna rapida in tutta Italia | Resi facili entro 30 giorni | Supporto clienti 24/7"}
+                </motion.div>
               </div>
-              {!companySettings.imageLogo && (
-                <h1 className="text-xl font-bold tracking-tight text-white">{companySettings.name}</h1>
-              )}
-            </div>
-          </div>
-          
-          <div className="flex-1 relative hidden md:block">
-            <input 
-              type="text" 
-              placeholder={`Cerca su ${companySettings.name}...`}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-10 bg-white rounded-md pl-4 pr-10 text-base md:text-sm focus:outline-none focus:ring-2 focus:ring-brand-yellow"
-            />
-            <button className="absolute right-0 top-0 h-full px-3 bg-brand-yellow rounded-r-md">
-              <Search className="w-5 h-5 text-brand-dark" />
-            </button>
+            ) : (
+              <div className="px-4 h-full flex items-center justify-between text-[10px] font-black uppercase tracking-widest w-full">
+                <div className="flex items-center gap-2">
+                  <span className="opacity-70">{pageSettings.topBarLeftText || `Consegna a Massimo - Roma`}</span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="opacity-70">{pageSettings.topBarRightText || `Aiuto Resi e Ordine`}</span>
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center gap-3 sm:gap-4">
-            <button 
-              onClick={() => {
-                if (currentUser) {
-                  setAuthStep('profile');
-                } else {
-                  setAuthStep('email');
-                }
-                setIsAuthOpen(true);
-              }}
-              className="flex flex-col items-center text-white hover:text-brand-yellow transition-colors"
+          {/* Header */}
+          <motion.header 
+            style={{ 
+              boxShadow: useTransform(headerShadowOpacity, (v) => `0 10px 30px -10px rgba(0,0,0,${v})`)
+            }}
+            className="sticky top-0 z-40 bg-gradient-to-b from-[#111111] to-black"
+          >
+            {/* Animated Top Section (Logo, Desktop Search, Actions) */}
+            <motion.div 
+              style={{ height: headerTopHeight, opacity: headerTopOpacity, scale: headerTopScale }}
+              className="px-4 flex items-center justify-between gap-4 overflow-hidden origin-top"
             >
-              <User className="w-5 h-5" />
-              <span className="text-[10px] font-bold uppercase">{currentUser ? currentUser.name.split(' ')[0] : 'Accedi'}</span>
-            </button>
-            <button 
-              onClick={() => setIsCartOpen(true)}
-              className="relative flex items-center text-white gap-1"
-            >
-              <motion.div 
-                key={cartTrigger}
-                animate={cartTrigger > 0 ? { scale: [1, 1.25, 1], rotate: [0, -10, 10, 0] } : {}}
-                transition={{ duration: 0.4, ease: "easeOut" }}
-                className="relative"
-              >
-                <ShoppingCart className="w-7 h-7" />
-                {cartCount > 0 && (
-                  <motion.span 
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    className="absolute -top-1 -right-1 bg-brand-yellow text-brand-dark text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-brand-blue"
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => setIsSideMenuOpen(true)}
+                  className="text-white hover:text-brand-yellow transition-colors"
+                >
+                  <Menu className="w-7 h-7" />
+                </button>
+                <div className="flex items-center gap-3">
+                  <div className={companySettings.imageLogo ? "h-10 flex items-center" : "w-8 h-8 bg-brand-yellow rounded-lg flex items-center justify-center overflow-hidden"}>
+                    {companySettings.imageLogo ? (
+                      <img src={companySettings.imageLogo} alt="Logo" className="h-full object-contain" referrerPolicy="no-referrer" />
+                    ) : companySettings.logo.startsWith('http') ? (
+                      <img src={companySettings.logo} alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <span className="text-brand-dark font-black text-lg">{companySettings.logo}</span>
+                    )}
+                  </div>
+                  {!companySettings.imageLogo && (
+                    <h1 className="text-xl font-bold tracking-tight text-white">{companySettings.name}</h1>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex-1 relative hidden md:block">
+                <input 
+                  type="text" 
+                  placeholder={`Cerca su ${companySettings.name}...`}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full h-10 bg-white rounded-md pl-4 pr-10 text-base md:text-sm focus:outline-none focus:ring-2 focus:ring-brand-yellow"
+                />
+                <button className="absolute right-0 top-0 h-full px-3 bg-brand-yellow rounded-r-md">
+                  <Search className="w-5 h-5 text-brand-dark" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-3 sm:gap-4">
+                <button 
+                  onClick={() => {
+                    if (currentUser) {
+                      setAuthStep('profile');
+                      setActiveUserView('profile');
+                    } else {
+                      setAuthStep('email');
+                    }
+                    setIsAuthOpen(true);
+                  }}
+                  className="flex flex-col items-center text-white hover:text-brand-yellow transition-colors"
+                >
+                  <User className="w-5 h-5" />
+                  <span className="text-[10px] font-bold uppercase">{currentUser ? currentUser.name.split(' ')[0] : 'Accedi'}</span>
+                </button>
+                <button 
+                  onClick={() => setIsCartOpen(true)}
+                  className="relative flex items-center text-white gap-1"
+                >
+                  <motion.div 
+                    key={cartTrigger}
+                    animate={cartTrigger > 0 ? { scale: [1, 1.25, 1], rotate: [0, -10, 10, 0] } : {}}
+                    transition={{ duration: 0.4, ease: "easeOut" }}
+                    className="relative"
                   >
-                    {cartCount}
-                  </motion.span>
-                )}
-              </motion.div>
-              <span className="text-sm font-bold hidden sm:inline">Carrello</span>
-            </button>
-          </div>
-        </motion.div>
+                    <ShoppingCart className="w-7 h-7" />
+                    {cartCount > 0 && (
+                      <motion.span 
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        className="absolute -top-1 -right-1 bg-brand-yellow text-brand-dark text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-brand-blue"
+                      >
+                        {cartCount}
+                      </motion.span>
+                    )}
+                  </motion.div>
+                  <span className="text-sm font-bold hidden sm:inline">Carrello</span>
+                </button>
+              </div>
+            </motion.div>
 
-        {/* Secondary Nav / Categories (NOW ABOVE SEARCH) */}
-        <div className="bg-brand-blue border-t border-white/10 px-4 py-2 flex items-center text-xs font-bold text-white/90 overflow-hidden">
-          {selectedCategory !== "Tutti" && (
-            <div className="flex-shrink-0 bg-brand-blue pr-4 z-20 shadow-[10px_0_15px_-5px_rgba(0,0,0,0.3)] relative">
-              <button 
-                onClick={() => setSelectedCategory("Tutti")}
-                className="text-brand-yellow uppercase tracking-widest flex items-center gap-1"
-              >
-                <ArrowLeft className="w-3 h-3" />
-                {selectedCategory}
-              </button>
+            {/* Secondary Nav / Categories (NOW ABOVE SEARCH) */}
+            <div className="bg-brand-blue border-t border-white/10 px-4 py-2 flex items-center text-xs font-bold text-white/90 overflow-hidden">
+              <div className="flex overflow-x-auto no-scrollbar gap-4 items-center flex-1 scroll-smooth">
+                {/* Icona Home Gialla e Nome Categoria Attiva */}
+                <div className="flex items-center gap-3 pr-2 border-r border-white/10 flex-shrink-0">
+                  <button 
+                    onClick={() => handleCategorySelect("Tutti")}
+                    className="flex items-center group"
+                    title="Torna alla Home"
+                  >
+                    <div className="w-6 h-6 rounded-md bg-brand-yellow flex items-center justify-center group-hover:scale-110 transition-transform shadow-md shadow-brand-yellow/20">
+                      <Home className="w-3.5 h-3.5 text-brand-dark" />
+                    </div>
+                  </button>
+                  {selectedCategory !== "Tutti" && (
+                    <span className="text-brand-yellow font-black uppercase text-[10px] tracking-[0.15em] whitespace-nowrap">
+                      {selectedCategory}
+                    </span>
+                  )}
+                </div>
+
+                {(selectedCategory === "Tutti" 
+                  ? pageSettings.categories.filter((c: string) => c !== "Tutti") 
+                  : (pageSettings.subcategories[selectedCategory] || []).filter((c: string) => c !== "Tutti")
+                ).map((cat, idx) => (
+                  <motion.button
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.05 }}
+                    key={`${selectedCategory}-${cat}-${idx}`}
+                    onClick={() => selectedCategory === "Tutti" ? handleCategorySelect(cat) : setSelectedSubcategory(cat)}
+                    className={`whitespace-nowrap pb-1 border-b-2 transition-all ${
+                      (selectedCategory === "Tutti" ? selectedCategory === cat : selectedSubcategory === cat)
+                        ? "border-brand-yellow text-white" 
+                        : "border-transparent hover:text-white"
+                    }`}
+                  >
+                    {cat}
+                  </motion.button>
+                ))}
+              </div>
             </div>
-          )}
-          
-          <div className="flex overflow-x-auto no-scrollbar gap-4 items-center flex-1 scroll-smooth">
-            {(selectedCategory === "Tutti" ? pageSettings.categories : ["Tutti", ...(pageSettings.subcategories[selectedCategory] || [])]).map((cat, idx) => (
-              <motion.button
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: idx * 0.05 }}
-                key={`${selectedCategory}-${cat}-${idx}`}
-                onClick={() => selectedCategory === "Tutti" ? setSelectedCategory(cat) : setSelectedSubcategory(cat)}
-                className={`whitespace-nowrap pb-1 border-b-2 transition-all ${
-                  (selectedCategory === "Tutti" ? selectedCategory === cat : selectedSubcategory === cat)
-                    ? "border-brand-yellow text-white" 
-                    : "border-transparent hover:text-white"
-                }`}
-              >
-                {cat}
-              </motion.button>
-            ))}
-          </div>
-        </div>
 
-        {/* Mobile Search Bar (NOW BELOW CATEGORIES) */}
-        <div className="px-4 py-2 md:hidden border-t border-white/5">
-          <div className="relative">
-            <input 
-              type="text" 
-              placeholder="Cerca su Bespoint..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-11 bg-white rounded-lg pl-4 pr-12 text-base shadow-inner focus:outline-none"
-            />
-            <button className="absolute right-0 top-0 h-full px-4 bg-brand-yellow rounded-r-lg">
-              <Search className="w-5 h-5 text-brand-dark" />
-            </button>
-          </div>
-        </div>
-      </motion.header>
+            {/* Mobile Search Bar (NOW BELOW CATEGORIES) */}
+            <div className="px-4 py-2 md:hidden border-t border-white/5">
+              <div className="relative">
+                <input 
+                  type="text" 
+                  placeholder="Cerca su Bespoint..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full h-11 bg-white rounded-lg pl-4 pr-12 text-base shadow-inner focus:outline-none"
+                />
+                <button className="absolute right-0 top-0 h-full px-4 bg-brand-yellow rounded-lg">
+                  <Search className="w-5 h-5 text-brand-dark" />
+                </button>
+              </div>
+            </div>
+          </motion.header>
 
-      {/* Hero Banner (Amazon Style) */}
-      {selectedCategory === "Tutti" ? (
-        <motion.section 
-          initial={{ height: 0 }}
-          animate={{ height: "auto" }}
-          transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
-          style={{ opacity: heroOpacity, y: heroY }}
-          className="relative w-full overflow-hidden mb-8 origin-top"
-        >
-          <div className="h-64 sm:h-80 w-full relative">
-            <div className="absolute inset-0 bg-gradient-to-b from-brand-blue/40 to-transparent z-10" />
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={heroIndex}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 1 }}
-                className="w-full h-full"
+          <main className="relative z-10">
+            {/* Hero Banner (Amazon Style) */}
+            {selectedCategory === "Tutti" ? (
+              <section 
+                className="relative w-full overflow-hidden mb-8 origin-top h-[460px] sm:h-[550px]"
               >
-                {topSlides[heroIndex]?.link ? (
-                  <a href={topSlides[heroIndex].link} className="block w-full h-full">
+                <div className="h-full w-full relative">
+                  <div className="absolute inset-0 bg-gradient-to-b from-brand-blue/40 to-transparent z-10" />
+                  <div className="w-full h-full relative">
+                    {topSlides.map((slide, idx) => (
+                      <div 
+                        key={idx}
+                        className={`absolute inset-0 w-full h-full ${heroIndex === idx ? 'block z-10' : 'hidden z-0'}`}
+                      >
+                        {/* Dark Overlay (Triggle) */}
+                        {pageSettings.slidesOverlayEnabled && (
+                          <div className="absolute inset-0 bg-black/40 z-10 pointer-events-none" />
+                        )}
+
+                        {slide.link ? (
+                          <a href={slide.link} className="block w-full h-full">
+                            <img 
+                              src={slide.url || "https://picsum.photos/seed/hero/1920/1080"} 
+                              alt={slide.alt || "Hero Context"} 
+                              title={slide.title || ""}
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          </a>
+                        ) : (
+                          <img 
+                            src={slide.url || "https://picsum.photos/seed/hero/1920/1080"} 
+                            alt={slide.alt || "Hero Context"} 
+                            title={slide.title || ""}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="absolute inset-0 flex flex-col items-center justify-end pb-12 px-6 z-20">
+                    <h2 className="text-3xl font-black text-white mb-2 uppercase tracking-tighter drop-shadow-lg">
+                      {topSlides[heroIndex]?.title || "Le scelte migliori per te"}
+                    </h2>
+                    <p className="text-sm text-white/90 mb-4 font-bold drop-shadow-md">
+                      {topSlides[heroIndex]?.alt || "Risparmia fino al 40% su tutta la tecnologia Bespoint."}
+                    </p>
+                  </div>
+                </div>
+              </section>
+            ) : (
+              <motion.section
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="relative w-full h-48 sm:h-64 overflow-hidden mb-8"
+              >
+                {pageSettings.categoryBanners[selectedCategory]?.link ? (
+                  <a href={pageSettings.categoryBanners[selectedCategory].link} className="block w-full h-full">
                     <img 
-                      src={topSlides[heroIndex]?.url || "https://picsum.photos/seed/hero/1920/1080"} 
-                      alt={topSlides[heroIndex]?.alt || "Hero Context"} 
-                      title={topSlides[heroIndex]?.title || ""}
+                      src={pageSettings.categoryBanners[selectedCategory]?.url || `https://picsum.photos/seed/${selectedCategory.toLowerCase()}/1200/600`} 
+                      alt={pageSettings.categoryBanners[selectedCategory]?.alt || selectedCategory}
+                      title={pageSettings.categoryBanners[selectedCategory]?.title || selectedCategory}
                       className="w-full h-full object-cover"
                       referrerPolicy="no-referrer"
                     />
                   </a>
                 ) : (
                   <img 
-                    src={topSlides[heroIndex]?.url || "https://picsum.photos/seed/hero/1920/1080"} 
-                    alt={topSlides[heroIndex]?.alt || "Hero Context"} 
-                    title={topSlides[heroIndex]?.title || ""}
+                    src={pageSettings.categoryBanners[selectedCategory]?.url || `https://picsum.photos/seed/${selectedCategory.toLowerCase()}/1200/600`} 
+                    alt={pageSettings.categoryBanners[selectedCategory]?.alt || selectedCategory}
+                    title={pageSettings.categoryBanners[selectedCategory]?.title || selectedCategory}
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                   />
                 )}
-              </motion.div>
-            </AnimatePresence>
-            <div className="absolute inset-0 flex flex-col items-center justify-end pb-12 px-6 z-20">
-              <h2 className="text-3xl font-black text-white mb-2 uppercase tracking-tighter drop-shadow-lg">
-                {topSlides[heroIndex]?.title || "Le scelte migliori per te"}
-              </h2>
-              <p className="text-sm text-white/90 mb-4 font-bold drop-shadow-md">
-                {topSlides[heroIndex]?.alt || "Risparmia fino al 40% su tutta la tecnologia Bespoint."}
-              </p>
-            </div>
-          </div>
-        </motion.section>
-      ) : (
-        <motion.section
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="relative w-full h-48 sm:h-64 overflow-hidden mb-8"
-        >
-          {pageSettings.categoryBanners[selectedCategory]?.link ? (
-            <a href={pageSettings.categoryBanners[selectedCategory].link} className="block w-full h-full">
-              <img 
-                src={pageSettings.categoryBanners[selectedCategory]?.url || `https://picsum.photos/seed/${selectedCategory.toLowerCase()}/1200/600`} 
-                alt={pageSettings.categoryBanners[selectedCategory]?.alt || selectedCategory}
-                title={pageSettings.categoryBanners[selectedCategory]?.title || selectedCategory}
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-            </a>
-          ) : (
-            <img 
-              src={pageSettings.categoryBanners[selectedCategory]?.url || `https://picsum.photos/seed/${selectedCategory.toLowerCase()}/1200/600`} 
-              alt={pageSettings.categoryBanners[selectedCategory]?.alt || selectedCategory}
-              title={pageSettings.categoryBanners[selectedCategory]?.title || selectedCategory}
-              className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-            />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-r from-brand-dark/90 via-brand-dark/40 to-transparent flex flex-col justify-center px-6 sm:px-12 pointer-events-none">
-            <motion.div
-              initial={{ opacity: 0, x: -30 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.2 }}
-            >
-              <h2 className="text-4xl sm:text-5xl font-black text-white uppercase tracking-tighter mb-2">
-                {pageSettings.categoryBanners[selectedCategory]?.title || selectedCategory}
-              </h2>
-              <div className="w-16 h-1 bg-brand-yellow mb-4" />
-              <p className="text-white/80 font-bold text-sm max-w-md">
-                {pageSettings.categoryBanners[selectedCategory]?.alt || `Esplora la nostra selezione premium di prodotti per ${selectedCategory.toLowerCase()}. Qualità garantita Bespoint.`}
-              </p>
-            </motion.div>
-          </div>
-        </motion.section>
-      )}
-
-      {/* Promo Horizontal Scroll */}
-      {selectedCategory === "Tutti" && (
-        <>
-          <section className="px-4 mb-12">
-            <motion.div 
-              initial={{ opacity: 0, x: -20 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              className="flex items-center justify-between mb-4"
-            >
-              <h2 className="text-lg font-bold text-brand-dark">Le scelte migliori per te</h2>
-              <button className="text-xs font-bold text-blue-600">Vedi tutte</button>
-            </motion.div>
-            <div className="flex overflow-x-auto lg:grid lg:grid-cols-12 lg:grid-rows-2 lg:h-[450px] no-scrollbar gap-4 pb-4">
-              {(pageSettings.linkRapidi || []).map((item: any, idx: number) => (
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.8, x: 20 }}
-                  animate={{ opacity: 1, scale: 1, x: 0 }}
-                  transition={{ 
-                    type: "spring", 
-                    stiffness: 100, 
-                    damping: 15, 
-                    delay: idx * 0.1 
-                  }}
-                  key={item.id}
-                  onClick={() => {
-                    setSelectedCategory(item.category || "Tutti");
-                    setSelectedSubcategory(item.subcategory || "Tutti");
-                  }}
-                  className={`${item.color} rounded-2xl p-4 h-40 lg:h-full min-w-[160px] sm:min-w-[200px] flex flex-col justify-between overflow-hidden relative group cursor-pointer flex-shrink-0 shadow-lg ${
-                    idx === 0 ? "lg:col-span-4 lg:row-span-2" : 
-                    idx === 1 ? "lg:col-span-4 lg:row-span-1" :
-                    idx === 2 ? "lg:col-span-4 lg:row-span-1" :
-                    idx === 3 ? "lg:col-span-2 lg:row-span-1" :
-                    idx === 4 ? "lg:col-span-3 lg:row-span-1" :
-                    idx === 5 ? "lg:col-span-3 lg:row-span-1" :
-                    "lg:hidden"
-                  }`}
-                >
-                  <motion.div 
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.1 + 0.2 }}
-                    className="z-10"
+                <div className="absolute inset-0 bg-gradient-to-r from-brand-dark/90 via-brand-dark/40 to-transparent flex flex-col justify-center px-6 sm:px-12 pointer-events-none">
+                  <motion.div
+                    initial={{ opacity: 0, x: -30 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.2 }}
                   >
-                    <h3 className={`${item.color === "bg-brand-yellow" ? "text-brand-dark" : "text-white"} font-bold text-sm mb-1`}>
-                      {item.title}
-                    </h3>
-                    <p className={`${item.color === "bg-brand-yellow" ? "text-brand-blue" : "text-brand-yellow"} text-[10px] font-bold`}>
-                      {item.subtitle}
+                    <h2 className="text-4xl sm:text-5xl font-black text-white uppercase tracking-tighter mb-2">
+                      {pageSettings.categoryBanners[selectedCategory]?.title || selectedCategory}
+                    </h2>
+                    <div className="w-16 h-1 bg-brand-yellow mb-4" />
+                    <p className="text-white/80 font-bold text-sm max-w-md">
+                      {pageSettings.categoryBanners[selectedCategory]?.alt || `Esplora la nostra selezione premium di prodotti per ${selectedCategory.toLowerCase()}. Qualità garantita BesPoint.`}
                     </p>
                   </motion.div>
-                  <motion.img 
-                    initial={{ opacity: 0, scale: 0.5, rotate: -20 }}
-                    animate={{ opacity: 0.5, scale: 1, rotate: 0 }}
-                    transition={{ delay: idx * 0.1 + 0.3, type: "spring" }}
-                    src={`https://picsum.photos/seed/${item.seed}/300/300`} 
-                    className="absolute right-[-20px] bottom-[-20px] w-24 h-24 object-cover rounded-full group-hover:scale-110 transition-transform" 
-                    referrerPolicy="no-referrer"
-                  />
-                </motion.div>
-              ))}
-            </div>
-          </section>
+                </div>
+              </motion.section>
+            )}
 
-          <SlideSection slides={middleSlides} />
+            {/* Global Filters Section (Universal Filters for all sections) */}
+            <section className="px-4 mb-8">
+              <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
+                {/* Mobile Toggle / Desktop Header */}
+                <div 
+                  onClick={() => !isDesktop && setIsGlobalFiltersExpanded(!isGlobalFiltersExpanded)}
+                  className={`p-4 sm:p-6 flex items-center justify-between cursor-pointer md:cursor-default ${!isDesktop && "hover:bg-gray-50 active:bg-gray-100"}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-1.5 h-6 bg-brand-yellow rounded-full"></div>
+                    <p className="text-[11px] font-black uppercase text-brand-dark tracking-[0.2em] pointer-events-none">
+                      {isDesktop ? "Affina la ricerca nel catalogo" : (isGlobalFiltersExpanded ? "Chiudi filtri avanzati" : "Affina la tua ricerca")}
+                    </p>
+                  </div>
+                  {!isDesktop && (
+                    <motion.div
+                      animate={{ rotate: isGlobalFiltersExpanded ? 180 : 0 }}
+                      transition={{ type: "spring", stiffness: 200, damping: 15 }}
+                      className="text-brand-yellow"
+                    >
+                      <ChevronDown size={20} />
+                    </motion.div>
+                  )}
+                </div>
+
+                {/* Desktop Filters / Mobile Expanded Content */}
+                <AnimatePresence>
+                  {(isDesktop || isGlobalFiltersExpanded) && (
+                    <motion.div
+                      initial={isDesktop ? false : { height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ type: "spring", stiffness: 100, damping: 20 }}
+                    >
+                      <div className="px-6 pb-8 md:pt-0 pt-2 flex flex-col md:flex-row items-center md:justify-between gap-6 border-t md:border-t-0 border-gray-50">
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-6 sm:gap-8 w-full md:w-auto">
+                          {/* Brand Filter */}
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 flex-1">
+                            <label htmlFor="brand-global" className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none">Filtra Marca:</label>
+                            <div className="relative flex-1 sm:flex-none sm:min-w-[180px]">
+                              <select 
+                                id="brand-global"
+                                value={selectedBrand}
+                                onChange={(e) => setSelectedBrand(e.target.value)}
+                                className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-xl px-5 py-3 sm:py-2.5 pr-10 text-xs font-black text-brand-dark focus:outline-none focus:ring-2 focus:ring-brand-yellow shadow-sm cursor-pointer transition-all"
+                              >
+                                <option value="Tutti">Tutti i Produttori</option>
+                                {Array.from(new Set(products.map(p => p.brand).filter(Boolean))).sort().map(brand => (
+                                  <option key={brand} value={brand}>{brand}</option>
+                                ))}
+                              </select>
+                              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-brand-yellow">
+                                <ChevronRight size={14} className="rotate-90" />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="hidden md:block w-px h-6 bg-gray-100"></div>
+
+                          {/* Sort Filter */}
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 flex-1">
+                            <label htmlFor="sort-global" className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none">Ordina Risultati:</label>
+                            <div className="relative flex-1 sm:flex-none sm:min-w-[180px]">
+                              <select 
+                                id="sort-global"
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value)}
+                                className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-xl px-5 py-3 sm:py-2.5 pr-10 text-xs font-black text-brand-dark focus:outline-none focus:ring-2 focus:ring-brand-yellow shadow-sm cursor-pointer transition-all"
+                              >
+                                <option value="newest">Novità & Arrivi</option>
+                                <option value="price-asc">Prezzo: decrescente</option>
+                                <option value="price-desc">Prezzo: crescente</option>
+                                <option value="rating">Migliori Recensioni</option>
+                              </select>
+                              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-brand-yellow">
+                                <ChevronRight size={14} className="rotate-90" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </section>
+
+            {/* Promo Horizontal Scroll */}
+            {selectedCategory === "Tutti" && pageSettings.isQuickLinksEnabled && (
+              <>
+                <section className="px-4 mb-12">
+                  <motion.div 
+                    initial={{ opacity: 0, x: -20 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    className="mb-4"
+                  >
+                    <h2 className="text-3xl font-black text-brand-dark uppercase tracking-tighter">LE SCELTE MIGLIORI PER TE</h2>
+                  </motion.div>
+                  <div className="flex overflow-x-auto lg:grid lg:grid-cols-12 lg:grid-rows-2 lg:h-[450px] no-scrollbar gap-4 pb-4">
+                    {(pageSettings.linkRapidi || []).map((item: any, idx: number) => (
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.8, x: 20 }}
+                        animate={{ opacity: 1, scale: 1, x: 0 }}
+                        transition={{ 
+                          type: "spring", 
+                          stiffness: 100, 
+                          damping: 15, 
+                          delay: idx * 0.1 
+                        }}
+                        key={item.id}
+                        onClick={() => {
+                          setSelectedCategory(item.category || "Tutti");
+                          setSelectedSubcategory(item.subcategory || "Tutti");
+                        }}
+                        className={`${item.imageUrl ? 'bg-gray-800' : item.color} rounded-2xl p-4 h-40 lg:h-full min-w-[160px] sm:min-w-[200px] flex flex-col justify-between overflow-hidden relative group cursor-pointer flex-shrink-0 shadow-lg ${
+                          idx === 0 ? "lg:col-span-4 lg:row-span-2" : 
+                          idx === 1 ? "lg:col-span-4 lg:row-span-1" :
+                          idx === 2 ? "lg:col-span-4 lg:row-span-1" :
+                          idx === 3 ? "lg:col-span-2 lg:row-span-1" :
+                          idx === 4 ? "lg:col-span-3 lg:row-span-1" :
+                          idx === 5 ? "lg:col-span-3 lg:row-span-1" :
+                          "lg:hidden"
+                        }`}
+                      >
+                        {/* Background image if set */}
+                        {item.imageUrl && (
+                          <img
+                            src={item.imageUrl}
+                            alt={item.title}
+                            className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            referrerPolicy="no-referrer"
+                          />
+                        )}
+                        {/* Dark overlay for readability */}
+                        {item.imageUrl && <div className="absolute inset-0 bg-black/40 group-hover:bg-black/50 transition-colors" />}
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: idx * 0.1 + 0.2 }}
+                          className="z-10 relative"
+                        >
+                          <h3 className="text-white font-bold text-sm mb-1 drop-shadow-md">
+                            {item.title}
+                          </h3>
+                          <p className={`${!item.imageUrl && item.color === "bg-brand-yellow" ? "text-brand-blue" : "text-brand-yellow"} text-[10px] font-bold drop-shadow-sm`}>
+                            {item.subtitle}
+                          </p>
+                        </motion.div>
+                        {!item.imageUrl && (
+                          <motion.img 
+                            initial={{ opacity: 0, scale: 0.5, rotate: -20 }}
+                            animate={{ opacity: 0.5, scale: 1, rotate: 0 }}
+                            transition={{ delay: idx * 0.1 + 0.3, type: "spring" }}
+                            src={`https://picsum.photos/seed/${item.seed}/300/300`} 
+                            className="absolute right-[-20px] bottom-[-20px] w-24 h-24 object-cover rounded-full group-hover:scale-110 transition-transform" 
+                            referrerPolicy="no-referrer"
+                          />
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+                </section>
+
+                {pageSettings.isMiddleSlidesEnabled && <SlideSection slides={middleSlides} darken={pageSettings.slidesOverlayEnabled} />}
+              </>
+            )}
+
+            {/* Vetrina (Featured) Section */}
+            {selectedCategory === "Tutti" && searchQuery === "" && pageSettings.isFeaturedEnabled && featuredProducts.length > 0 && (
+              <section className="px-4 mb-16">
+                <motion.div 
+                  initial={{ opacity: 0, x: -20 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  className="flex items-center justify-between mb-6"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-1.5 h-8 bg-brand-yellow rounded-full"></div>
+                    <h2 className="text-3xl font-black text-brand-dark uppercase tracking-tighter">
+                      {pageSettings.featuredTitle || "IN VETRINA"}
+                    </h2>
+                  </div>
+                </motion.div>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+                  {featuredProducts.map((product, index) => (
+                    <ProductCard 
+                      key={`featured-${product.id}`} 
+                      product={product} 
+                      onClick={() => handleProductSelect(product)} 
+                      onAddToCart={addToCart}
+                      index={index}
+                      reviews={productReviews}
+                      isFavorite={favorites.includes(product.id)}
+                      onToggleFavorite={toggleFavorite}
+                      onShare={handleShare}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Scelti Per Te (Special Promotion) Section */}
+            {selectedCategory === "Tutti" && searchQuery === "" && pageSettings.isSpecialCategoryEnabled && specialCategoryProducts.length > 0 && (
+              <section className="px-4 mb-16">
+                <motion.div 
+                  initial={{ opacity: 0, x: -20 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  className="flex items-center justify-between mb-6"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-1.5 h-8 bg-indigo-600 rounded-full"></div>
+                    <h2 className="text-3xl font-black text-brand-dark uppercase tracking-tighter">
+                      {pageSettings.specialCategoryTitle || "SCELTI PER TE"}
+                    </h2>
+                  </div>
+                </motion.div>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+                  {specialCategoryProducts.map((product, index) => (
+                    <ProductCard 
+                      key={`special-${product.id}`} 
+                      product={product} 
+                      onClick={() => handleProductSelect(product)} 
+                      onAddToCart={addToCart}
+                      index={index}
+                      reviews={productReviews}
+                      isFavorite={favorites.includes(product.id)}
+                      onToggleFavorite={toggleFavorite}
+                      onShare={handleShare}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Product Grid Section (Ultimi Arrivi / Categoria / Ricerca) */}
+            {(pageSettings.isNewArrivalsEnabled || selectedCategory !== "Tutti" || searchQuery !== "") && (
+              <section className="px-4 relative z-10 mb-16">
+                <motion.div 
+                  initial={{ opacity: 0, x: -20 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6"
+                >
+                  <div className="flex items-baseline gap-2">
+                    <h2 className="text-3xl font-black text-brand-dark uppercase tracking-tighter leading-none">
+                      {selectedCategory === "Tutti" ? (pageSettings.newArrivalsTitle || "NUOVI ARRIVI") : selectedCategory}
+                    </h2>
+                  </div>
+                </motion.div>
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                  {filteredProducts.map((product, index) => (
+                    <ProductCard 
+                      key={product.id} 
+                      product={product} 
+                      onClick={() => handleProductSelect(product)} 
+                      onAddToCart={addToCart}
+                      index={index}
+                      reviews={productReviews}
+                      isFavorite={favorites.includes(product.id)}
+                      onToggleFavorite={toggleFavorite}
+                      onShare={handleShare}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Recensioni Clienti Section */}
+            {selectedCategory === "Tutti" && searchQuery === "" && (
+              <section className="px-4 mb-24 overflow-hidden">
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  className="text-center mb-12"
+                >
+                  <div className="inline-flex items-center gap-2 bg-brand-blue/5 text-brand-blue px-4 py-1.5 rounded-full mb-4">
+                    <Star className="w-4 h-4 fill-brand-blue" />
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] pt-0.5">Feedback Verificati</span>
+                  </div>
+                  <h2 className="text-5xl font-black text-brand-dark uppercase tracking-tighter mb-2 italic">Dicono di noi</h2>
+                  <p className="text-gray-400 font-bold text-sm">La soddisfazione dei nostri clienti è la nostra priorità assoluta.</p>
+                </motion.div>
+
+                <div className="flex overflow-x-auto no-scrollbar gap-6 pb-8 snap-x">
+                  {productReviews.filter(r => r.status === 'approved').length > 0 ? (
+                    productReviews.filter(r => r.status === 'approved').slice(-6).reverse().map((rev, idx) => {
+                      const product = PRODUCTS.find(p => p.id === rev.productId);
+                      return (
+                        <motion.div 
+                          initial={{ opacity: 0, x: 50 }}
+                          whileInView={{ opacity: 1, x: 0 }}
+                          viewport={{ once: true }}
+                          transition={{ delay: idx * 0.1 }}
+                          key={rev.id} 
+                          className="flex-shrink-0 w-[320px] bg-white border border-gray-100 p-8 rounded-[2.5rem] shadow-xl shadow-brand-dark/5 snap-center relative group"
+                        >
+                          <div className="absolute top-8 right-8 text-6xl font-black text-gray-50 opacity-50 select-none group-hover:text-brand-yellow/30 transition-colors">"</div>
+                          
+                          <div className="flex gap-1 mb-6">
+                            {[1, 2, 3, 4, 5].map(s => (
+                              <Star key={s} className={`w-4 h-4 ${s <= rev.rating ? 'fill-brand-yellow text-brand-yellow' : 'text-gray-100'}`} />
+                            ))}
+                          </div>
+
+                          <p className="text-brand-dark font-bold text-sm leading-relaxed mb-8 italic relative z-10">
+                            {rev.comment || "Recensione rilasciata senza commento testuale."}
+                          </p>
+
+                          <div className="flex items-center gap-4 mt-auto">
+                            <div className="w-12 h-12 bg-gray-50 rounded-2xl border border-gray-100 p-1 shrink-0 overflow-hidden">
+                              <img src={product?.image || "https://picsum.photos/seed/product/50/50"} alt="Prod" className="w-full h-full object-contain" />
+                            </div>
+                            <div className="overflow-hidden">
+                              <p className="font-black text-brand-dark text-xs uppercase tracking-tight truncate">{rev.customerName}</p>
+                              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{rev.date}</p>
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })
+                  ) : (
+                      <div className="w-full py-20 text-center bg-white border border-dashed border-gray-200 rounded-[3rem]">
+                        <p className="text-gray-300 font-black uppercase tracking-widest text-xs">Nessuna recensione ancora presente</p>
+                      </div>
+                  )}
+                </div>
+
+                <div className="mt-8 flex justify-center">
+                   <div className="bg-brand-dark text-white px-8 py-4 rounded-2xl flex items-center gap-6 shadow-2xl">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black text-brand-yellow uppercase tracking-widest">Media Voto</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-2xl font-black italic">4.9/5.0</span>
+                          <div className="flex gap-0.5">
+                            {[1,2,3,4,5].map(s => <Star key={s} className="w-3 h-3 fill-brand-yellow text-brand-yellow" />)}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="w-px h-8 bg-white/10"></div>
+                      <div>
+                         <span className="text-[10px] font-black text-brand-yellow uppercase tracking-widest">Google Business</span>
+                         <p className="text-xs font-bold leading-tight uppercase tracking-tight">Prossimamente integrato</p>
+                      </div>
+                   </div>
+                </div>
+              </section>
+            )}
+
+            {selectedCategory === "Tutti" && pageSettings.isBottomSlidesEnabled && <SlideSection slides={bottomSlides} darken={pageSettings.slidesOverlayEnabled} />}
+
+            {/* Parallax Floating Banner */}
+            {selectedCategory === "Tutti" && (
+              <section className="px-4 mb-16 overflow-hidden">
+                <motion.div 
+                  initial={{ opacity: 0, y: 50 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  className="relative h-64 rounded-3xl overflow-hidden shadow-2xl border border-white/20"
+                >
+                  <motion.div 
+                    style={{ y: parallaxY }}
+                    className="absolute inset-0 w-full h-[120%]"
+                  >
+                    <img 
+                      src="https://picsum.photos/seed/parallax-tech/1200/800" 
+                      alt="Parallax" 
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  </motion.div>
+                  <div className="absolute inset-0 bg-brand-blue/40 backdrop-blur-[2px] flex flex-col items-center justify-center text-center p-8">
+                    <motion.h2 
+                      initial={{ opacity: 0, y: 20 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true }}
+                      transition={{ delay: 0.2 }}
+                      className="text-3xl font-black text-white uppercase tracking-tighter mb-2 drop-shadow-lg"
+                    >
+                      BESPOINT EXPERIENCE
+                    </motion.h2>
+                    <motion.p 
+                      initial={{ opacity: 0, y: 20 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true }}
+                      transition={{ delay: 0.3 }}
+                      className="text-white/90 font-bold max-w-md drop-shadow-md mb-6"
+                    >
+                      {companySettings.mission}
+                    </motion.p>
+                    <motion.button 
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      whileInView={{ opacity: 1, scale: 1 }}
+                      viewport={{ once: true }}
+                      transition={{ delay: 0.4 }}
+                      className="bg-white text-brand-blue px-8 py-3 rounded-full font-black uppercase text-sm tracking-widest hover:bg-brand-yellow hover:text-brand-dark transition-all transform hover:scale-105 shadow-xl"
+                    >
+                      Esplora il Brand
+                    </motion.button>
+                  </div>
+                </motion.div>
+              </section>
+            )}
+
+            {/* Footer */}
+            <footer className="bg-brand-dark text-white pt-16 pb-32 px-6 no-print">
+              <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
+                {/* Company Info */}
+                <div className="space-y-6">
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 bg-brand-yellow rounded-xl flex items-center justify-center">
+                      <span className="text-brand-dark font-black text-xl italic">{companySettings.logo}</span>
+                    </div>
+                    <h1 className="text-2xl font-black italic tracking-tighter">{companySettings.name}</h1>
+                  </div>
+                  <p className="text-gray-400 text-sm leading-relaxed">
+                    {companySettings.mission}
+                  </p>
+                  <div className="flex gap-4">
+                    <a href={companySettings.socials.facebook} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-brand-blue transition-colors">
+                      <Facebook className="w-5 h-5" />
+                    </a>
+                    <a href={companySettings.socials.instagram} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-brand-blue transition-colors">
+                      <Instagram className="w-5 h-5" />
+                    </a>
+                    <a href={companySettings.socials.twitter} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-brand-blue transition-colors">
+                      <Twitter className="w-5 h-5" />
+                    </a>
+                  </div>
+                </div>
+
+                {/* Quick Links */}
+                <div>
+                  <h3 className="text-lg font-bold mb-6 text-brand-yellow">Link Rapidi</h3>
+                  <ul className="space-y-4 text-gray-400 text-sm">
+                    <li className="hover:text-white cursor-pointer transition-colors">Chi Siamo</li>
+                    <li className="hover:text-white cursor-pointer transition-colors">Prodotti</li>
+                    <li className="hover:text-white cursor-pointer transition-colors">Offerte</li>
+                    <li className="hover:text-white cursor-pointer transition-colors">Blog</li>
+                    <li className="hover:text-white cursor-pointer transition-colors">Lavora con noi</li>
+                  </ul>
+                </div>
+
+                {/* Support */}
+                <div>
+                  <h3 className="text-lg font-bold mb-6 text-brand-yellow">Supporto</h3>
+                  <ul className="space-y-4 text-gray-400 text-sm">
+                    <li className="hover:text-white cursor-pointer transition-colors">Centro Assistenza</li>
+                    <li className="hover:text-white cursor-pointer transition-colors">Spedizioni</li>
+                    <li className="hover:text-white cursor-pointer transition-colors">Resi e Rimborsi</li>
+                    <li className="hover:text-white cursor-pointer transition-colors">Privacy Policy</li>
+                    <li className="hover:text-white cursor-pointer transition-colors">Termini e Condizioni</li>
+                  </ul>
+                </div>
+
+                {/* Contact */}
+                <div>
+                  <h3 className="text-lg font-bold mb-6 text-brand-yellow">Contatti</h3>
+                  <ul className="space-y-4 text-gray-400 text-sm">
+                    <li className="flex items-center gap-3">
+                      <MapPin className="w-5 h-5 text-brand-blue" />
+                      <span>{companySettings.legalAddress}</span>
+                    </li>
+                    <li className="flex items-center gap-3">
+                      <Phone className="w-5 h-5 text-brand-blue" />
+                      <span>{companySettings.phone}</span>
+                    </li>
+                    <li className="flex items-center gap-3">
+                      <Mail className="w-5 h-5 text-brand-blue" />
+                      <span>{companySettings.email}</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="mt-16 pt-8 border-t border-white/10 text-center text-gray-500 text-xs flex flex-col items-center gap-4">
+                <p>© 2026 {companySettings.name}. Tutti i diritti riservati - {companySettings.legalName}</p>
+                <button 
+                  onClick={() => setIsAdminOpen(true)}
+                  className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-brand-yellow hover:text-brand-dark transition-all opacity-20 hover:opacity-100"
+                >
+                  <Shield className="w-5 h-5" />
+                </button>
+              </div>
+            </footer>
+          </main>
         </>
       )}
 
-      {/* Product Grid Section */}
-      <section className="px-4 relative z-10 mb-16">
-        <motion.div 
-          initial={{ opacity: 0, x: -20 }}
-          whileInView={{ opacity: 1, x: 0 }}
-          viewport={{ once: true }}
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6"
-        >
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold text-brand-dark">Prodotti in vetrina</h2>
-            <span className="text-xs text-gray-400 font-medium">({filteredProducts.length} risultati)</span>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <label htmlFor="sort" className="text-xs font-bold text-gray-500 uppercase tracking-widest">Ordina per:</label>
-            <div className="relative">
-              <select 
-                id="sort"
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="appearance-none bg-white border border-gray-200 rounded-lg px-4 py-2 pr-10 text-sm font-bold text-brand-dark focus:outline-none focus:ring-2 focus:ring-brand-yellow shadow-sm cursor-pointer"
-              >
-                <option value="newest">Novità</option>
-                <option value="price-asc">Prezzo: dal più basso</option>
-                <option value="price-desc">Prezzo: dal più alto</option>
-                <option value="rating">Valutazione</option>
-              </select>
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                <ChevronRight className="w-4 h-4 rotate-90" />
-              </div>
-            </div>
-          </div>
-        </motion.div>
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          {filteredProducts.length === 0 ? (
-            <div className="col-span-full py-12 text-center bg-white rounded-xl shadow-sm">
-              <p className="text-gray-400 font-medium">Nessun prodotto trovato</p>
-            </div>
-          ) : (
-            filteredProducts.map((product, index) => (
-              <div key={product.id}>
-                <ProductCard 
-                  product={product} 
-                  onClick={() => setSelectedProduct(product)} 
-                  onAddToCart={addToCart}
-                  index={index}
-                />
-              </div>
-            ))
-          )}
-        </div>
-      </section>
-
-      {selectedCategory === "Tutti" && <SlideSection slides={bottomSlides} />}
-
-      {/* Parallax Floating Banner */}
-      {selectedCategory === "Tutti" && (
-        <section className="px-4 mb-16 overflow-hidden">
-          <motion.div 
-            initial={{ opacity: 0, y: 50 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="relative h-64 rounded-3xl overflow-hidden shadow-2xl border border-white/20"
-          >
-            <motion.div 
-              style={{ y: parallaxY }}
-              className="absolute inset-0 w-full h-[120%]"
-            >
-              <img 
-                src="https://picsum.photos/seed/parallax-tech/1200/800" 
-                alt="Parallax" 
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-            </motion.div>
-            <div className="absolute inset-0 bg-brand-blue/40 backdrop-blur-[2px] flex flex-col items-center justify-center text-center p-8">
-              <motion.h2 
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.2 }}
-                className="text-3xl font-black text-white uppercase tracking-tighter mb-2 drop-shadow-lg"
-              >
-                Bespoint Experience
-              </motion.h2>
-              <motion.p 
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.3 }}
-                className="text-white/90 font-bold max-w-md drop-shadow-md mb-6"
-              >
-                {companySettings.mission}
-              </motion.p>
-              <motion.button 
-                initial={{ opacity: 0, scale: 0.8 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.4 }}
-                className="bg-white text-brand-blue px-8 py-3 rounded-full font-black uppercase text-sm tracking-widest hover:bg-brand-yellow hover:text-brand-dark transition-all transform hover:scale-105 shadow-xl"
-              >
-                Esplora il Brand
-              </motion.button>
-            </div>
-          </motion.div>
-        </section>
-      )}
-
-      {/* Footer */}
-      <footer className="bg-brand-dark text-white pt-16 pb-32 px-6">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
-          {/* Company Info */}
-          <div className="space-y-6">
-            <div className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-brand-yellow rounded-xl flex items-center justify-center">
-                <span className="text-brand-dark font-black text-xl italic">{companySettings.logo}</span>
-              </div>
-              <h1 className="text-2xl font-black italic tracking-tighter">{companySettings.name}</h1>
-            </div>
-            <p className="text-gray-400 text-sm leading-relaxed">
-              {companySettings.mission}
-            </p>
-            <div className="flex gap-4">
-              <a href={companySettings.socials.facebook} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-brand-blue transition-colors">
-                <Facebook className="w-5 h-5" />
-              </a>
-              <a href={companySettings.socials.instagram} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-brand-blue transition-colors">
-                <Instagram className="w-5 h-5" />
-              </a>
-              <a href={companySettings.socials.twitter} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-brand-blue transition-colors">
-                <Twitter className="w-5 h-5" />
-              </a>
-            </div>
-          </div>
-
-          {/* Quick Links */}
-          <div>
-            <h3 className="text-lg font-bold mb-6 text-brand-yellow">Link Rapidi</h3>
-            <ul className="space-y-4 text-gray-400 text-sm">
-              <li className="hover:text-white cursor-pointer transition-colors">Chi Siamo</li>
-              <li className="hover:text-white cursor-pointer transition-colors">Prodotti</li>
-              <li className="hover:text-white cursor-pointer transition-colors">Offerte</li>
-              <li className="hover:text-white cursor-pointer transition-colors">Blog</li>
-              <li className="hover:text-white cursor-pointer transition-colors">Lavora con noi</li>
-            </ul>
-          </div>
-
-          {/* Support */}
-          <div>
-            <h3 className="text-lg font-bold mb-6 text-brand-yellow">Supporto</h3>
-            <ul className="space-y-4 text-gray-400 text-sm">
-              <li className="hover:text-white cursor-pointer transition-colors">Centro Assistenza</li>
-              <li className="hover:text-white cursor-pointer transition-colors">Spedizioni</li>
-              <li className="hover:text-white cursor-pointer transition-colors">Resi e Rimborsi</li>
-              <li className="hover:text-white cursor-pointer transition-colors">Privacy Policy</li>
-              <li className="hover:text-white cursor-pointer transition-colors">Termini e Condizioni</li>
-            </ul>
-          </div>
-
-          {/* Contact */}
-          <div>
-            <h3 className="text-lg font-bold mb-6 text-brand-yellow">Contatti</h3>
-            <ul className="space-y-4 text-gray-400 text-sm">
-              <li className="flex items-center gap-3">
-                <MapPin className="w-5 h-5 text-brand-blue" />
-                <span>{companySettings.legalAddress}</span>
-              </li>
-              <li className="flex items-center gap-3">
-                <Phone className="w-5 h-5 text-brand-blue" />
-                <span>{companySettings.phone}</span>
-              </li>
-              <li className="flex items-center gap-3">
-                <Mail className="w-5 h-5 text-brand-blue" />
-                <span>{companySettings.email}</span>
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        <div className="mt-16 pt-8 border-t border-white/10 text-center text-gray-500 text-xs flex flex-col items-center gap-4">
-          <p>© 2026 {companySettings.name}. Tutti i diritti riservati - {companySettings.legalName}</p>
-          <button 
-            onClick={() => setIsAdminOpen(true)}
-            className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-brand-yellow hover:text-brand-dark transition-all opacity-20 hover:opacity-100"
-          >
-            <Shield className="w-5 h-5" />
-          </button>
-        </div>
-      </footer>
-
       {/* Modals & Sheets */}
+      {selectedProduct && (
+        <ProductSheet 
+          key={`product-sheet-${selectedProduct.id}`}
+          product={selectedProduct} 
+          onClose={() => handleProductSelect(null)} 
+          onAddToCart={addToCart}
+          isDesktop={isDesktop}
+          reviews={productReviews}
+          favorites={favorites}
+          toggleFavorite={toggleFavorite}
+          onShare={handleShare}
+          onSelectProduct={handleProductSelect}
+          allProducts={products}
+        />
+      )}
       <AnimatePresence>
-        {selectedProduct && (
-          <ProductSheet 
-            key="product-sheet"
-            product={selectedProduct} 
-            onClose={() => setSelectedProduct(null)} 
-            onAddToCart={addToCart}
-            isDesktop={isDesktop}
-          />
-        )}
         {isCartOpen && (
           <CartDrawer 
             key="cart-drawer"
@@ -2038,15 +3604,44 @@ export default function App() {
             onClose={() => setIsCartOpen(false)} 
             onUpdateQuantity={updateQuantity}
             onRemove={removeFromCart}
+            onCheckout={() => {
+              setIsCartOpen(false);
+              setIsCheckoutOpen(true);
+            }}
           />
         )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isCheckoutOpen && (
+          <CheckoutSheet 
+            onClose={() => setIsCheckoutOpen(false)} 
+            items={cart}
+            settings={paymentSettings}
+            currentUser={currentUser}
+            onAuthOpen={() => {
+              setIsCheckoutOpen(false);
+              setAuthStep('register');
+              setIsAuthOpen(true);
+            }}
+            appOrders={orders}
+            setAppOrders={setOrders}
+            setCart={setCart}
+            companySettings={companySettings}
+            addToast={addToast}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         <SideMenu 
           key="side-menu"
           isOpen={isSideMenuOpen} 
           onClose={() => setIsSideMenuOpen(false)} 
-          onSelectCategory={setSelectedCategory}
+          onSelectCategory={handleCategorySelect}
           companySettings={companySettings}
           pageSettings={pageSettings}
+          products={products}
           onOpenProfile={() => {
             if (currentUser) {
               setAuthStep('profile');
@@ -2107,28 +3702,31 @@ export default function App() {
                 {/* Sidebar */}
                 <motion.div 
                   initial={{ x: -280 }}
-                  animate={{ x: 0 }}
-                  className={`${isSidebarCollapsed ? 'w-24' : 'w-72 md:w-80'} h-full bg-brand-dark flex flex-col transition-all duration-500 relative z-20 shadow-2xl ${isMobileAdminMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+                  animate={{ x: 0, width: isSidebarCollapsed ? 83 : 256 }}
+                  className={`h-full bg-gray-50 flex flex-col transition-all duration-500 relative z-20 ${isMobileAdminMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
                 >
 
             {/* Sidebar Menu */}
             <motion.div 
               initial={false}
               animate={{ 
-                width: window.innerWidth < 768 ? (isMobileAdminMenuOpen ? '100%' : 0) : (isSidebarCollapsed ? 80 : 256),
+                width: window.innerWidth < 768 ? (isMobileAdminMenuOpen ? '100%' : 0) : (isSidebarCollapsed ? 83 : 256),
                 x: window.innerWidth < 768 && !isMobileAdminMenuOpen ? -300 : 0,
                 opacity: window.innerWidth < 768 && !isMobileAdminMenuOpen ? 0 : 1
               }}
-              className={`bg-gray-50 border-r border-gray-100 flex flex-col p-6 relative transition-all duration-300 z-40 ${window.innerWidth < 768 ? (isMobileAdminMenuOpen ? 'fixed inset-0 pt-20' : 'hidden') : ''}`}
+              className={`bg-gray-50 border-r border-gray-100 flex flex-col relative transition-all duration-300 z-40 h-full overflow-hidden ${window.innerWidth < 768 ? (isMobileAdminMenuOpen ? 'fixed inset-0 pt-20' : 'hidden') : ''}`}
             >
                 <button 
                   onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-                  className="hidden md:flex absolute -right-3 top-20 w-6 h-6 bg-white border border-gray-100 rounded-full items-center justify-center shadow-sm z-10 hover:bg-brand-yellow transition-colors"
+                  className="hidden md:flex absolute -right-4 top-1/2 -translate-y-1/2 w-[43px] h-[43px] bg-white border-2 border-brand-yellow rounded-full items-center justify-center z-[70] hover:scale-110 transition-all group active:scale-95"
+                  title={isSidebarCollapsed ? "Espandi Menu" : "Contrai Menu"}
                 >
-                  {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+                  <div className="flex items-center justify-center mr-0.5">
+                    {isSidebarCollapsed ? <Plus className="w-5 h-5 text-brand-dark rotate-45" /> : <ChevronLeft className="w-5 h-5 text-brand-dark" />}
+                  </div>
                 </button>
 
-                <div className="hidden md:flex items-center gap-3 mb-10 overflow-hidden">
+                <div className={`hidden md:flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3 px-6'} mt-6 mb-10 overflow-hidden`}>
                   <div className="w-10 h-10 bg-brand-blue rounded-xl flex-shrink-0 flex items-center justify-center">
                     <Shield className="w-6 h-6 text-brand-yellow" />
                   </div>
@@ -2136,140 +3734,49 @@ export default function App() {
                     <h3 className="font-black text-brand-dark uppercase tracking-tighter whitespace-nowrap">Admin Panel</h3>
                   )}
                 </div>
-                
-                <nav className="space-y-2 flex-1">
-                  <button 
-                    onClick={() => {
-                      setAdminActiveTab('company');
-                      setIsMobileAdminMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-4 md:py-3 rounded-2xl font-bold text-sm transition-all ${adminActiveTab === 'company' ? 'bg-brand-yellow text-brand-dark shadow-md' : 'text-gray-400 hover:bg-gray-100'}`}
-                  >
-                    <Grid className="w-6 h-6 md:w-5 md:h-5 flex-shrink-0" />
-                    {(window.innerWidth >= 768 ? !isSidebarCollapsed : true) && <span>Azienda</span>}
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setAdminActiveTab('slides');
-                      setIsMobileAdminMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-4 md:py-3 rounded-2xl font-bold text-sm transition-all ${adminActiveTab === 'slides' ? 'bg-brand-yellow text-brand-dark shadow-md' : 'text-gray-400 hover:bg-gray-100'}`}
-                  >
-                    <Play className="w-6 h-6 md:w-5 md:h-5 flex-shrink-0" />
-                    {(window.innerWidth >= 768 ? !isSidebarCollapsed : true) && <span>Slide</span>}
-                  </button>
-                  <button 
-                    onClick={() => setAdminActiveTab('seo')}
-                    className={`w-full flex items-center gap-3 px-4 py-4 md:py-3 rounded-2xl font-bold text-sm transition-all ${adminActiveTab === 'seo' ? 'bg-brand-yellow text-brand-dark shadow-lg shadow-brand-yellow/20' : 'text-gray-400 hover:bg-gray-50 hover:text-brand-dark'}`}
-                  >
-                    <Globe className="w-6 h-6 md:w-5 md:h-5 flex-shrink-0" />
-                    {(window.innerWidth >= 768 ? !isSidebarCollapsed : true) && <span>SEO & Google</span>}
-                  </button>
 
-                  <button 
-                    onClick={() => setAdminActiveTab('analytics')}
-                    className={`w-full flex items-center gap-3 px-4 py-4 md:py-3 rounded-2xl font-bold text-sm transition-all ${adminActiveTab === 'analytics' ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20' : 'text-gray-400 hover:bg-gray-50 hover:text-brand-dark'}`}
-                  >
-                    <BarChart2 className="w-6 h-6 md:w-5 md:h-5 flex-shrink-0" />
-                    {(window.innerWidth >= 768 ? !isSidebarCollapsed : true) && <span>Analytics</span>}
-                  </button>
-
-                  <button 
-                    onClick={() => setAdminActiveTab('marketing')}
-                    className={`w-full flex items-center gap-3 px-4 py-4 md:py-3 rounded-2xl font-bold text-sm transition-all ${adminActiveTab === 'marketing' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-400 hover:bg-gray-50 hover:text-brand-dark'}`}
-                  >
-                    <Target className="w-6 h-6 md:w-5 md:h-5 flex-shrink-0" />
-                    {(window.innerWidth >= 768 ? !isSidebarCollapsed : true) && <span>Marketing & Adv</span>}
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setAdminActiveTab('categories');
-                      setIsMobileAdminMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-4 md:py-3 rounded-2xl font-bold text-sm transition-all ${adminActiveTab === 'categories' ? 'bg-brand-yellow text-brand-dark shadow-md' : 'text-gray-400 hover:bg-gray-100'}`}
-                  >
-                    <Compass className="w-6 h-6 md:w-5 md:h-5 flex-shrink-0" />
-                    {(window.innerWidth >= 768 ? !isSidebarCollapsed : true) && <span>Categorie</span>}
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setAdminActiveTab('orders' as any);
-                      setIsMobileAdminMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-4 md:py-3 rounded-2xl font-bold text-sm transition-all ${adminActiveTab === 'orders' ? 'bg-brand-yellow text-brand-dark shadow-md' : 'text-gray-400 hover:bg-gray-100'}`}
-                  >
-                    <ShoppingBag className="w-6 h-6 md:w-5 md:h-5 flex-shrink-0" />
-                    {(window.innerWidth >= 768 ? !isSidebarCollapsed : true) && <span>Ordini</span>}
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setAdminActiveTab('couriers');
-                      setIsMobileAdminMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-4 md:py-3 rounded-2xl font-bold text-sm transition-all ${adminActiveTab === 'couriers' ? 'bg-brand-yellow text-brand-dark shadow-md' : 'text-gray-400 hover:bg-gray-100'}`}
-                  >
-                    <Truck className="w-6 h-6 md:w-5 md:h-5 flex-shrink-0" />
-                    {(window.innerWidth >= 768 ? !isSidebarCollapsed : true) && <span>Corrieri</span>}
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setAdminActiveTab('products');
-                      setIsMobileAdminMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-4 md:py-3 rounded-2xl font-bold text-sm transition-all ${adminActiveTab === 'products' ? 'bg-brand-yellow text-brand-dark shadow-md' : 'text-gray-400 hover:bg-gray-100'}`}
-                  >
-                    <Package className="w-6 h-6 md:w-5 md:h-5 flex-shrink-0" />
-                    {(window.innerWidth >= 768 ? !isSidebarCollapsed : true) && <span>Prodotti</span>}
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setAdminActiveTab('marketplaces');
-                      setIsMobileAdminMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-4 md:py-3 rounded-2xl font-bold text-sm transition-all ${adminActiveTab === 'marketplaces' ? 'bg-brand-yellow text-brand-dark shadow-md' : 'text-gray-400 hover:bg-gray-100'}`}
-                  >
-                    <Globe className="w-6 h-6 md:w-5 md:h-5 flex-shrink-0" />
-                    {(window.innerWidth >= 768 ? !isSidebarCollapsed : true) && <span>Marketplaces</span>}
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setAdminActiveTab('link_rapidi' as any);
-                      setIsMobileAdminMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-4 md:py-3 rounded-2xl font-bold text-sm transition-all ${adminActiveTab === ('link_rapidi' as any) ? 'bg-brand-yellow text-brand-dark shadow-md' : 'text-gray-400 hover:bg-gray-100'}`}
-                  >
-                    <Box className="w-6 h-6 md:w-5 md:h-5 flex-shrink-0" />
-                    {(window.innerWidth >= 768 ? !isSidebarCollapsed : true) && <span>Link Rapidi</span>}
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setAdminActiveTab('returns' as any);
-                      setIsMobileAdminMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-4 md:py-3 rounded-2xl font-bold text-sm transition-all ${adminActiveTab === 'returns' ? 'bg-red-500 text-white shadow-md' : 'text-gray-400 hover:bg-gray-100'}`}
-                  >
-                    <RefreshCw className="w-6 h-6 md:w-5 md:h-5 flex-shrink-0" />
-                    {(window.innerWidth >= 768 ? !isSidebarCollapsed : true) && <span>Gestione Resi</span>}
-                  </button>
-
-                  <button 
-                    onClick={() => {
-                      setAdminActiveTab('users' as any);
-                      setIsMobileAdminMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-4 md:py-3 rounded-2xl font-bold text-sm transition-all ${adminActiveTab === 'users' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:bg-gray-100'}`}
-                  >
-                    <Users className="w-6 h-6 md:w-5 md:h-5 flex-shrink-0" />
-                    {(window.innerWidth >= 768 ? !isSidebarCollapsed : true) && <span>Archivio Utenti</span>}
-                  </button>
+                <nav className="space-y-1 flex-1 overflow-y-auto custom-scrollbar">
+                  {[
+                    { tab: 'dashboard', label: 'Panoramica', icon: Home, color: 'bg-brand-dark text-white' },
+                    { tab: 'company', label: 'Azienda', icon: Grid, color: 'bg-brand-yellow text-brand-dark font-black' },
+                    { tab: 'slides', label: 'Slide', icon: Play, color: 'bg-brand-yellow text-brand-dark' },
+                    { tab: 'link_rapidi', label: 'Link Rapidi', icon: Box, color: 'bg-brand-yellow text-brand-dark' },
+                    { tab: 'categories', label: 'Categorie', icon: Compass, color: 'bg-brand-yellow text-brand-dark' },
+                    { tab: 'products', label: 'Prodotti', icon: Package, color: 'bg-brand-yellow text-brand-dark' },
+                    { tab: 'image_linker', label: 'Bulk Images', icon: ImageIcon, color: 'bg-indigo-500 text-white' },
+                    { tab: 'couriers', label: 'Corrieri', icon: Truck, color: 'bg-brand-yellow text-brand-dark' },
+                    { tab: 'orders', label: 'Ordini', icon: ShoppingBag, color: 'bg-brand-blue text-white font-black' },
+                    { tab: 'users', label: 'Archivio Utenti', icon: Users, color: 'bg-blue-600 text-white' },
+                    { tab: 'returns', label: 'Gestione Resi', icon: RefreshCw, color: 'bg-red-500 text-white' },
+                    { tab: 'seo', label: 'SEO & Google', icon: Globe, color: 'bg-indigo-700 text-white' },
+                    { tab: 'analytics', label: 'Analytics', icon: BarChart2, color: 'bg-indigo-600 text-white' },
+                    { tab: 'marketplaces', label: 'Marketplace', icon: Globe, color: 'bg-amber-600 text-white' },
+                    { tab: 'payments', label: 'Pagamenti', icon: CreditCard, color: 'bg-green-600 text-white font-black' },
+                    { tab: 'marketing', label: 'Marketing', icon: Target, color: 'bg-orange-500 text-white' },
+                    { tab: 'reviews', label: 'Recensioni', icon: Star, color: 'bg-brand-yellow text-brand-dark font-black' }
+                  ].map((item) => (
+                    <div key={item.tab} className="px-3">
+                      <button 
+                        onClick={() => {
+                          setAdminActiveTab(item.tab as any);
+                          setIsMobileAdminMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3 px-4'} py-3.5 md:py-2.5 rounded-xl font-bold text-sm transition-all ${adminActiveTab === item.tab ? item.color : 'text-gray-400 hover:bg-gray-100/50'}`}
+                        title={isSidebarCollapsed ? item.label : ''}
+                      >
+                        <item.icon className="w-5 h-5 flex-shrink-0" />
+                        {!isSidebarCollapsed && <span>{item.label}</span>}
+                      </button>
+                    </div>
+                  ))}
                 </nav>
 
                 <button 
                   onClick={() => setIsAdminOpen(false)}
-                  className="mt-auto w-full flex items-center justify-center gap-2 px-4 py-4 md:py-3 rounded-2xl font-bold text-sm text-red-500 hover:bg-red-50 transition-all"
+                  className={`mt-auto w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-center gap-2'} px-4 py-4 md:py-3 rounded-2xl font-bold text-sm text-red-500 hover:bg-red-50 transition-all`}
                 >
                   <X className="w-6 h-6 md:w-5 md:h-5 flex-shrink-0" />
-                  {(window.innerWidth >= 768 ? !isSidebarCollapsed : true) && <span>Esci</span>}
+                  {!isSidebarCollapsed && <span>Esci</span>}
                 </button>
             </motion.div>
           </motion.div>
@@ -2280,7 +3787,7 @@ export default function App() {
                   <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
                     <div className="flex justify-between items-end">
                       <div>
-                        <h2 className="text-[40px] font-black text-brand-dark leading-none tracking-tighter uppercase">Benvenuto, Boss 👋</h2>
+                        <h2 className="text-3xl font-black text-brand-dark leading-none tracking-tighter uppercase">Bentornato</h2>
                         <p className="text-sm font-bold text-gray-400 mt-2 uppercase tracking-[0.2em]">Ecco l'andamento del tuo impero BesPoint</p>
                       </div>
                       <div className="hidden md:flex gap-4">
@@ -2302,7 +3809,7 @@ export default function App() {
                         { label: 'Resi Gestiti', value: '12', change: '-5%', icon: Repeat, color: 'text-red-500', bg: 'bg-white' },
                         { label: 'Nuovi Clienti', value: '342', change: '+22%', icon: UserPlus, color: 'text-purple-500', bg: 'bg-white' }
                       ].map((stat, i) => (
-                        <div key={i} className={`${stat.bg} ${stat.bg === 'bg-brand-dark' ? 'text-white' : 'text-brand-dark border border-gray-100'} p-8 rounded-[3rem] shadow-xl hover:-translate-y-2 transition-all relative overflow-hidden group`}>
+                        <div key={i} className={`${stat.bg} ${stat.bg === 'bg-brand-dark' ? 'text-white' : 'text-brand-dark border border-gray-100'} p-8 rounded-[3rem] hover:-translate-y-2 transition-all relative overflow-hidden group`}>
                            <div className="flex justify-between items-start relative z-10">
                               <div className={`p-4 ${stat.bg === 'bg-brand-dark' ? 'bg-white/10' : 'bg-gray-50'} rounded-2xl group-hover:rotate-12 transition-transform`}>
                                 <stat.icon className={`w-7 h-7 ${stat.color}`} />
@@ -2322,7 +3829,7 @@ export default function App() {
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                        {/* Sales Trend Chart */}
-                       <div className="lg:col-span-2 bg-white p-10 rounded-[3.5rem] border border-gray-100 shadow-xl space-y-8">
+                       <div className="lg:col-span-2 bg-white p-10 rounded-[3.5rem] border border-gray-100 space-y-8">
                           <div className="flex justify-between items-center">
                              <h3 className="text-2xl font-black text-brand-dark uppercase tracking-tighter">Andamento Vendite</h3>
                              <div className="flex p-1 bg-gray-50 rounded-xl">
@@ -2341,9 +3848,9 @@ export default function App() {
                                     <motion.div 
                                       initial={{ height: 0 }}
                                       animate={{ height: `${h}%` }}
-                                      className="w-full bg-gradient-to-t from-brand-blue/5 to-brand-blue rounded-2xl group-hover:from-brand-yellow group-hover:to-brand-yellow/80 transition-all duration-500 shadow-sm"
+                                      className="w-full bg-gradient-to-t from-brand-blue/5 to-brand-blue rounded-2xl group-hover:from-brand-yellow group-hover:to-brand-yellow/80 transition-all duration-500"
                                     />
-                                    <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-brand-dark text-white px-3 py-1.5 rounded-xl text-[11px] font-black opacity-0 group-hover:opacity-100 transition-all pointer-events-none whitespace-nowrap shadow-2xl scale-75 group-hover:scale-100">
+                                    <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-brand-dark text-white px-3 py-1.5 rounded-xl text-[11px] font-black opacity-0 group-hover:opacity-100 transition-all pointer-events-none whitespace-nowrap scale-75 group-hover:scale-100">
                                       €{(h * 1500).toLocaleString()}
                                     </div>
                                   </div>
@@ -2355,7 +3862,7 @@ export default function App() {
 
                        {/* Top/Worst Products */}
                        <div className="space-y-6">
-                          <div className="bg-brand-dark p-8 rounded-[3rem] text-white shadow-2xl space-y-6">
+                          <div className="bg-brand-dark p-8 rounded-[3rem] text-white space-y-6">
                              <h3 className="text-lg font-black uppercase tracking-tighter flex items-center gap-2">
                                 <TrendingUp className="w-5 h-5 text-green-400" /> Top Venduti
                              </h3>
@@ -2379,7 +3886,7 @@ export default function App() {
                              </div>
                           </div>
 
-                          <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-sm space-y-6">
+                          <div className="bg-white p-8 rounded-[3rem] border border-gray-100 space-y-6">
                              <h3 className="text-lg font-black text-brand-dark uppercase tracking-tighter flex items-center gap-2">
                                 <TrendingDown className="w-5 h-5 text-red-500" /> Meno Venduti
                              </h3>
@@ -2390,7 +3897,7 @@ export default function App() {
                                 ].map((p, i) => (
                                   <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
                                      <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm">
+                                        <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center">
                                            <Box className="w-5 h-5 text-gray-300" />
                                         </div>
                                         <div>
@@ -2412,6 +3919,71 @@ export default function App() {
                   <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
                     <div className="flex justify-between items-center">
                       <h2 className="text-3xl font-black text-brand-dark uppercase tracking-tighter">Configurazione Azienda</h2>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+                       <div className="flex flex-col md:flex-row justify-between items-center bg-white p-8 rounded-[3rem] border border-gray-100 relative overflow-hidden">
+                          <div className="absolute right-0 top-0 w-64 h-64 bg-red-500 rounded-full blur-[100px] opacity-10"></div>
+                          <div className="relative z-10 pr-4">
+                            <h3 className="text-xl font-black text-brand-dark uppercase tracking-tighter mb-2">Hard Reset: Restart</h3>
+                            <p className="text-[10px] font-black uppercase text-gray-400 max-w-xs leading-relaxed">Rendi l'applicazione nuova di zecca. Cancella TUTTO e riparti da zero.</p>
+                          </div>
+                          <button 
+                             onClick={() => setAdminConfirmAction({
+                               active: true,
+                               title: "Restart: Reset Totale",
+                               message: "Vuoi formattare TUTTO l'e-commerce? Perderai prodotti, ordini, clienti e impostazioni. Non potrai tornare indietro.",
+                               onConfirm: hardReset,
+                               color: "bg-red-500"
+                             })}
+                             className="relative z-10 bg-red-500 hover:bg-red-600 text-white px-8 py-4 rounded-2xl font-black uppercase text-xs tracking-widest transition-all h-fit mt-4 md:mt-0 active:scale-95"
+                           >
+                             Reset Totale
+                           </button>
+                       </div>
+
+                       <div className="flex flex-col md:flex-row justify-between items-center bg-white p-8 rounded-[3rem] border border-gray-100 relative overflow-hidden">
+                          <div className="absolute left-0 top-0 w-64 h-64 bg-brand-yellow rounded-full blur-[100px] opacity-10"></div>
+                          <div className="relative z-10 pr-4">
+                            <h3 className="text-xl font-black text-brand-dark uppercase tracking-tighter mb-2">Prodotti: Wipe</h3>
+                            <p className="text-[10px] font-black uppercase text-gray-400 max-w-xs leading-relaxed">Elimina istantaneamente SOLO tutti i prodotti dal catalogo corrente.</p>
+                          </div>
+                          <button 
+                             onClick={() => setAdminConfirmAction({
+                              active: true,
+                              title: "Elimina Prodotti?",
+                              message: "Vuoi davvero ripulire SOLO il catalogo prodotti? Le altre impostazioni rimarranno intatte.",
+                              onConfirm: () => {
+                                setProducts([]);
+                                addToast("Catalogo prodotti svuotato.", "info");
+                              },
+                              color: "bg-orange-500"
+                            })}
+                             className="relative z-10 bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-2xl font-black uppercase text-xs tracking-widest transition-all h-fit mt-4 md:mt-0 active:scale-95"
+                           >
+                             Elimina Prodotti
+                           </button>
+                       </div>
+
+                       <div className="flex flex-col md:flex-row justify-between items-center bg-white p-8 rounded-[3rem] border border-gray-100 relative overflow-hidden">
+                          <div className="absolute left-0 top-0 w-64 h-64 bg-brand-yellow rounded-full blur-[100px] opacity-10"></div>
+                          <div className="relative z-10 pr-4">
+                            <h3 className="text-xl font-black text-brand-dark uppercase tracking-tighter mb-2">Demo: Populate</h3>
+                            <p className="text-[10px] font-black uppercase text-gray-400 max-w-xs leading-relaxed">Carica istantaneamente prodotti, ordini e recensioni di prova.</p>
+                          </div>
+                          <button 
+                             onClick={() => setAdminConfirmAction({
+                              active: true,
+                              title: "Popola Dati Demo",
+                              message: "Verranno aggiunti prodotti, ordini e recensioni dimostrative per testare l'interfaccia. I tuoi dati attuali non verranno toccati.",
+                              onConfirm: populateDemoData,
+                              color: "bg-brand-yellow text-brand-dark"
+                            })}
+                             className="relative z-10 bg-brand-yellow hover:bg-brand-dark hover:text-brand-yellow text-brand-dark px-8 py-4 rounded-2xl font-black uppercase text-xs tracking-widest transition-all h-fit mt-4 md:mt-0 active:scale-95"
+                           >
+                             Dati Demo
+                           </button>
+                       </div>
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -2436,11 +4008,11 @@ export default function App() {
                               </div>
                             </label>
                             {companySettings.imageLogo && (
-                              <div className="w-32 h-32 bg-white border border-gray-100 rounded-2xl p-2 flex items-center justify-center relative shadow-sm">
+                              <div className="w-32 h-32 bg-white border border-gray-100 rounded-2xl p-2 flex items-center justify-center relative">
                                 <img src={companySettings.imageLogo} className="max-w-full max-h-full object-contain" />
                                 <button 
                                   onClick={() => setCompanySettings({...companySettings, imageLogo: ""})}
-                                  className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full shadow-lg hover:scale-110 transition-transform"
+                                  className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:scale-110 transition-transform"
                                 >
                                   <X className="w-3 h-3" />
                                 </button>
@@ -2469,11 +4041,11 @@ export default function App() {
                               </div>
                             </label>
                             {companySettings.favicon && (
-                              <div className="w-14 h-14 bg-white border border-gray-100 rounded-xl p-1 flex items-center justify-center relative shadow-sm">
+                              <div className="w-14 h-14 bg-white border border-gray-100 rounded-xl p-1 flex items-center justify-center relative">
                                 <img src={companySettings.favicon} className="w-full h-full object-contain rounded-lg" />
                                 <button 
                                   onClick={() => setCompanySettings({...companySettings, favicon: ""})}
-                                  className="absolute -top-1 -right-1 bg-red-500 text-white p-0.5 rounded-full shadow-lg"
+                                  className="absolute -top-1 -right-1 bg-red-500 text-white p-0.5 rounded-full"
                                 >
                                   <X className="w-2 h-2" />
                                 </button>
@@ -2622,118 +4194,70 @@ export default function App() {
                             className="mt-1 block w-full bg-gray-50 border-gray-200 rounded-xl px-3 py-2 text-base font-bold focus:ring-brand-yellow focus:border-brand-yellow"
                           />
                         </label>
+                        <label className="block">
+                          <span className="text-[10px] font-black uppercase text-gray-400">YouTube URL</span>
+                          <input 
+                            type="text" 
+                            value={companySettings.socials.youtube}
+                            onChange={(e) => setCompanySettings({...companySettings, socials: {...companySettings.socials, youtube: e.target.value}})}
+                            className="mt-1 block w-full bg-gray-50 border-gray-200 rounded-xl px-3 py-2 text-base font-bold focus:ring-brand-yellow focus:border-brand-yellow"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="text-[10px] font-black uppercase text-gray-400">TikTok URL</span>
+                          <input 
+                            type="text" 
+                            value={companySettings.socials.tiktok}
+                            onChange={(e) => setCompanySettings({...companySettings, socials: {...companySettings.socials, tiktok: e.target.value}})}
+                            className="mt-1 block w-full bg-gray-50 border-gray-200 rounded-xl px-3 py-2 text-base font-bold focus:ring-brand-yellow focus:border-brand-yellow"
+                          />
+                        </label>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {adminActiveTab === 'marketing' && (
-                  <div className="space-y-10 animate-in fade-in slide-in-from-right-8 duration-700">
-                    <div className="bg-gradient-to-br from-orange-500 to-red-600 rounded-[3rem] p-12 text-white shadow-2xl relative overflow-hidden">
-                       <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
-                       <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-8">
-                          <div className="text-center md:text-left space-y-4">
-                             <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/20 rounded-full backdrop-blur-md border border-white/30 text-[10px] font-black uppercase tracking-widest">
-                                <Target className="w-3.5 h-3.5" /> Marketing Central
-                             </div>
-                             <h2 className="text-[50px] font-black leading-none tracking-tighter uppercase">Potenzia le Vendite</h2>
-                             <p className="text-lg font-bold text-white/80 max-w-xl">Gestisci le tue campagne Meta e Google Ads direttamente dal pannello BesPoint.</p>
-                          </div>
-                          <div className="bg-white/10 backdrop-blur-xl p-8 rounded-[2.5rem] border border-white/20 text-center min-w-[280px] shadow-2xl">
-                             <p className="text-[10px] font-black uppercase tracking-widest text-white/60 mb-2">Budget Mensile Allocato</p>
-                             <p className="text-5xl font-black">€4.500</p>
-                             <div className="mt-4 flex items-center justify-center gap-2 text-green-300 font-bold">
-                                <TrendingUp className="w-4 h-4" /> +12% vs mese scorso
-                             </div>
-                          </div>
-                       </div>
-                    </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                       <div className="bg-white p-10 rounded-[3.5rem] border border-gray-100 shadow-xl space-y-8">
-                          <div className="flex items-center gap-4">
-                             <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner">
-                                <Facebook className="w-7 h-7" />
-                             </div>
-                             <div>
-                                <h3 className="text-2xl font-black text-brand-dark uppercase tracking-tighter leading-none">Meta Ads Manager</h3>
-                                <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mt-1">Facebook & Instagram</p>
-                             </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                             <div className="p-6 bg-gray-50 rounded-3xl space-y-1">
-                                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Impression</p>
-                                <p className="text-2xl font-black text-brand-dark">850k</p>
-                             </div>
-                             <div className="p-6 bg-gray-50 rounded-3xl space-y-1">
-                                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Click</p>
-                                <p className="text-2xl font-black text-brand-dark">12.4k</p>
-                             </div>
-                          </div>
-                          <button className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-indigo-600/20 hover:scale-[1.02] transition-all">Configura Pixel & API</button>
-                       </div>
-
-                       <div className="bg-white p-10 rounded-[3.5rem] border border-gray-100 shadow-xl space-y-8">
-                          <div className="flex items-center gap-4">
-                             <div className="w-14 h-14 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center shadow-inner">
-                                <Share2 className="w-7 h-7" />
-                             </div>
-                             <div>
-                                <h3 className="text-2xl font-black text-brand-dark uppercase tracking-tighter leading-none">Google Ads Center</h3>
-                                <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mt-1">Search & Shopping</p>
-                             </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                             <div className="p-6 bg-gray-50 rounded-3xl space-y-1">
-                                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">ROAS</p>
-                                <p className="text-2xl font-black text-brand-dark">4.2x</p>
-                             </div>
-                             <div className="p-6 bg-gray-50 rounded-3xl space-y-1">
-                                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Conversioni</p>
-                                <p className="text-2xl font-black text-brand-dark">342</p>
-                             </div>
-                          </div>
-                          <button className="w-full py-4 bg-red-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-red-600/20 hover:scale-[1.02] transition-all">Collega Merchant Center</button>
-                       </div>
-                    </div>
-                  </div>
-                )}
 
                 {adminActiveTab === 'seo' && (
                   <div className="space-y-10 animate-in fade-in slide-in-from-right-8 duration-700">
-                    <div className="flex justify-between items-end">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                        <div>
-                          <h2 className="text-[40px] font-black text-brand-dark leading-none tracking-tighter uppercase">SEO & Indicizzazione</h2>
-                          <p className="text-sm font-bold text-gray-400 mt-2 uppercase tracking-[0.2em]">Ottimizza la tua visibilità sui motori di ricerca</p>
+                          <h2 className="text-3xl font-black text-brand-dark uppercase tracking-tighter leading-none mb-2">SEO & Indicizzazione</h2>
+                          <div className="flex items-center gap-2">
+                            <span className="w-8 h-1 bg-brand-yellow rounded-full" />
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Ottimizzazione Motori di Ricerca & Google</p>
+                          </div>
                        </div>
-                       <div className="flex gap-3">
-                          <button className="px-6 py-3 bg-brand-yellow text-brand-dark rounded-xl font-black uppercase text-xs tracking-widest shadow-lg">Invia Sitemap</button>
-                       </div>
+                       <button className="bg-brand-dark text-brand-yellow px-8 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-black transition-all flex items-center gap-3">
+                         <Globe className="w-5 h-5" />
+                         <span>Invia Sitemap</span>
+                       </button>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                        <div className="lg:col-span-2 space-y-8">
-                          <div className="bg-white p-10 rounded-[3.5rem] border border-gray-100 shadow-xl">
+                          <div className="bg-white p-10 rounded-[3.5rem] border border-gray-100">
                              <h3 className="text-xl font-black text-brand-dark uppercase tracking-tighter mb-8 flex items-center gap-3">
                                 <Globe className="w-6 h-6 text-brand-blue" /> Configurazione Meta Tags Globali
                              </h3>
                              <div className="space-y-6">
                                 <div className="space-y-2">
                                    <label className="text-[10px] font-black uppercase text-gray-400 ml-1">Meta Title Default</label>
-                                   <input type="text" className="w-full bg-gray-50 border-gray-200 rounded-2xl px-5 py-4 font-bold text-brand-dark shadow-inner" placeholder="BesPoint | Il meglio del tech e della casa" />
+                                   <input type="text" className="w-full bg-gray-50 border-2 border-transparent rounded-2xl px-6 py-4 font-bold text-brand-dark focus:border-brand-yellow focus:bg-white transition-all font-mono" placeholder="BesPoint | Il meglio del tech e della casa" />
                                 </div>
                                 <div className="space-y-2">
                                    <label className="text-[10px] font-black uppercase text-gray-400 ml-1">Meta Description Default</label>
-                                   <textarea className="w-full bg-gray-50 border-gray-200 rounded-2xl px-5 py-4 font-bold text-brand-dark shadow-inner" rows={3}></textarea>
+                                   <textarea className="w-full bg-gray-50 border-2 border-transparent rounded-2xl px-6 py-4 font-bold text-brand-dark focus:border-brand-yellow focus:bg-white transition-all font-mono" rows={3}></textarea>
                                 </div>
                              </div>
                           </div>
 
-                          <div className="bg-white p-10 rounded-[3.5rem] border border-gray-100 shadow-xl">
+                          <div className="bg-white p-10 rounded-[3.5rem] border border-gray-100">
                              <h3 className="text-xl font-black text-brand-dark uppercase tracking-tighter mb-8 flex items-center gap-3">
-                                <Search className="w-6 h-6 text-brand-blue" /> Generatore Snippet URL Automatioco
+                                <Search className="w-6 h-6 text-brand-blue" /> Generatore Snippet URL Automatico
                              </h3>
-                             <div className="p-8 bg-brand-dark rounded-[2rem] text-white space-y-4">
+                             <div className="p-8 bg-brand-dark rounded-[2.5rem] text-white space-y-4">
                                 <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Esempio Anteprima Google</p>
                                 <p className="text-blue-400 text-sm font-bold">https://bespoint.it/categoria/lampade-led</p>
                                 <p className="text-lg font-black leading-tight uppercase">Lampade Led Minimal - BesPoint</p>
@@ -2747,7 +4271,7 @@ export default function App() {
                           </div>
                        </div>
 
-                       <div className="bg-white p-10 rounded-[3.5rem] border border-gray-100 shadow-xl space-y-8">
+                       <div className="bg-white p-10 rounded-[3.5rem] border border-gray-100 space-y-8">
                           <h3 className="text-xl font-black text-brand-dark uppercase tracking-tighter flex items-center gap-3">
                              <Activity className="w-6 h-6 text-green-500" /> Health Check SEO
                           </h3>
@@ -2777,13 +4301,137 @@ export default function App() {
                   </div>
                 )}
 
-                 {/* Duplicated Tab Removed */}
-
                 {adminActiveTab === 'slides' && (
                   <div className="w-full">
                     <div className="space-y-8">
-                    <div className="flex justify-between items-center">
-                      <h2 className="text-3xl font-black text-brand-dark uppercase tracking-tighter">GESTIONE SLIDE</h2>
+                    
+                    {/* Top Bar Configurator */}
+                    <div className="bg-white p-10 rounded-[3.5rem] border border-gray-100 space-y-8 mb-12">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                        <div>
+                          <h3 className="text-xl font-black text-brand-dark uppercase tracking-tighter flex items-center gap-3">
+                            <Monitor className="w-6 h-6 text-brand-blue" /> Configurazione Top Bar (1920x40px)
+                          </h3>
+                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">Personalizza il testo e l'immagine della barra superiore</p>
+                        </div>
+                        <div className="flex bg-gray-100 p-1.5 rounded-2xl gap-1 self-start">
+                          {(['static', 'marquee', 'image'] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              onClick={() => setPageSettings({ ...pageSettings, topBarMode: mode })}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${pageSettings.topBarMode === mode ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                            >
+                              {mode === 'static' ? 'Testo Fisso' : mode === 'marquee' ? 'Scorrimento' : 'Immagine'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        {pageSettings.topBarMode === 'static' && (
+                          <>
+                            <div className="space-y-2">
+                               <label className="text-[10px] font-black uppercase text-gray-400 ml-1">Testo Sinistra</label>
+                               <input 
+                                 type="text" 
+                                 value={pageSettings.topBarLeftText}
+                                 onChange={(e) => setPageSettings({ ...pageSettings, topBarLeftText: e.target.value })}
+                                 className="w-full bg-gray-50 border-2 border-transparent rounded-2xl px-6 py-4 font-bold text-brand-dark focus:border-brand-yellow focus:bg-white transition-all"
+                                 placeholder="Es: Consegna a Massimo - Roma"
+                               />
+                            </div>
+                            <div className="space-y-2">
+                               <label className="text-[10px] font-black uppercase text-gray-400 ml-1">Testo Destra</label>
+                               <input 
+                                 type="text" 
+                                 value={pageSettings.topBarRightText}
+                                 onChange={(e) => setPageSettings({ ...pageSettings, topBarRightText: e.target.value })}
+                                 className="w-full bg-gray-50 border-2 border-transparent rounded-2xl px-6 py-4 font-bold text-brand-dark focus:border-brand-yellow focus:bg-white transition-all"
+                                 placeholder="Es: Aiuto Resi e Ordini"
+                               />
+                            </div>
+                          </>
+                        )}
+
+                        {pageSettings.topBarMode === 'marquee' && (
+                          <div className="col-span-2 space-y-6">
+                            <div className="space-y-2">
+                               <label className="text-[10px] font-black uppercase text-gray-400 ml-1">Testo a Scorrimento</label>
+                               <textarea 
+                                 value={pageSettings.topBarMarqueeText}
+                                 onChange={(e) => setPageSettings({ ...pageSettings, topBarMarqueeText: e.target.value })}
+                                 className="w-full bg-gray-50 border-2 border-transparent rounded-2xl px-6 py-4 font-bold text-brand-dark focus:border-brand-yellow focus:bg-white transition-all whitespace-pre-wrap"
+                                 rows={2}
+                                 placeholder="Inserisci il testo che scorrerà..."
+                               />
+                            </div>
+                            <div className="space-y-2">
+                               <label className="text-[10px] font-black uppercase text-gray-400 ml-1 text-center block">Velocità Scorrimento (Lento - Veloce)</label>
+                               <div className="flex items-center gap-4">
+                                 <span className="text-[10px] font-black text-gray-400">Lento</span>
+                                 <input 
+                                   type="range" 
+                                   min="5" 
+                                   max="60" 
+                                   step="1"
+                                   value={70 - pageSettings.topBarMarqueeSpeed} 
+                                   onChange={(e) => setPageSettings({ ...pageSettings, topBarMarqueeSpeed: 70 - parseInt(e.target.value) })}
+                                   className="flex-1 accent-brand-yellow" 
+                                 />
+                                 <span className="text-[10px] font-black text-gray-400">Veloce</span>
+                                 <span className="bg-brand-blue text-white px-3 py-1 rounded-lg text-[10px] font-black">{Math.round(100 / (pageSettings.topBarMarqueeSpeed / 10))}%</span>
+                               </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {pageSettings.topBarMode === 'image' && (
+                          <div className="col-span-2 space-y-4">
+                            <div className="space-y-2">
+                               <label className="text-[10px] font-black uppercase text-gray-400 ml-1">Immagine Top Bar (Dimensioni: 1920x40px)</label>
+                               <div className="flex gap-4">
+                                  <input 
+                                    type="text" 
+                                    value={pageSettings.topBarImage}
+                                    onChange={(e) => setPageSettings({ ...pageSettings, topBarImage: e.target.value })}
+                                    className="flex-1 bg-gray-50 border-2 border-transparent rounded-2xl px-6 py-4 font-bold text-brand-dark focus:border-brand-yellow focus:bg-white transition-all"
+                                    placeholder="https://..."
+                                  />
+                                  <label className="cursor-pointer bg-brand-yellow text-brand-dark px-8 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-brand-orange transition-all flex items-center gap-2">
+                                    <Upload className="w-5 h-5" />
+                                    <span>Carica</span>
+                                    <input 
+                                      type="file" 
+                                      className="hidden" 
+                                      accept="image/*"
+                                      onChange={(e) => handleFileChange(e, (url) => setPageSettings({ ...pageSettings, topBarImage: url }))}
+                                    />
+                                  </label>
+                               </div>
+                            </div>
+                            {pageSettings.topBarImage && (
+                              <div className="w-full h-10 rounded-xl overflow-hidden border border-gray-100 bg-gray-50">
+                                <img src={pageSettings.topBarImage} className="w-full h-full object-cover" />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                      <div className="flex items-center gap-6">
+                        <h2 className="text-3xl font-black text-brand-dark uppercase tracking-tighter">GESTIONE SLIDE</h2>
+                        <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-gray-100 shadow-sm">
+                          <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Scura Slide</span>
+                          <button 
+                            onClick={() => setPageSettings({ ...pageSettings, slidesOverlayEnabled: !pageSettings.slidesOverlayEnabled })}
+                            className={`w-12 h-6 rounded-full transition-all relative ${pageSettings.slidesOverlayEnabled ? 'bg-brand-blue' : 'bg-gray-200'}`}
+                          >
+                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${pageSettings.slidesOverlayEnabled ? 'left-7' : 'left-1'}`} />
+                          </button>
+                        </div>
+                      </div>
                       <button 
                         onClick={() => {
                           const newSlides: any[] = [];
@@ -2822,7 +4470,7 @@ export default function App() {
                           });
                           setPageSettings({ ...pageSettings, homeSlides: newSlides });
                         }}
-                        className="bg-brand-blue text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-brand-dark transition-all shadow-lg active:scale-95"
+                        className="bg-brand-blue text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-brand-dark transition-all active:scale-95"
                       >
                         Genera Slide per Categoria
                       </button>
@@ -2830,14 +4478,14 @@ export default function App() {
 
                     {/* Home Slides Management */}
                     <div className="space-y-6">
-                                    <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 space-y-4">
+                                    <div className="bg-white p-5 rounded-3xl border border-gray-100 space-y-4">
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 pb-4">
                           <h3 className="text-lg font-black text-brand-dark uppercase tracking-tighter flex items-center gap-2">
                             <span className="w-1.5 h-6 bg-brand-yellow rounded-full"></span>
-                            Slide Top (Hero)
+                            Slide Top (Hero) <span className="text-brand-blue text-xs ml-2 opacity-50 underline decoration-brand-yellow">1920x1080px</span>
                           </h3>
                           
-                          <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-2xl border border-gray-100 shadow-inner">
+                          <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-2xl border border-gray-100">
                             <div className="flex items-center">
                               <button 
                                 onClick={() => setAdminTopIdx(prev => Math.max(0, prev - 1))}
@@ -2871,7 +4519,7 @@ export default function App() {
                                 });
                                 setAdminTopIdx(adminTopSlides.length);
                               }}
-                              className="p-2 bg-brand-yellow text-brand-dark rounded-xl hover:shadow-md transition-all active:scale-90"
+                              className="p-2 bg-brand-yellow text-brand-dark rounded-xl hover:bg-brand-orange transition-all active:scale-90"
                               title="Aggiungi Slide"
                             >
                               <Plus className="w-4 h-4" />
@@ -2880,7 +4528,7 @@ export default function App() {
                             {adminTopSlides.length > 0 && (
                               <button 
                                 onClick={() => setSlideToDelete({ id: adminTopSlides[adminTopIdx].id, type: 'Slide Top', position: 'home_top' })}
-                                className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90 shadow-sm"
+                                className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90"
                                 title="Elimina Slide Corrente"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -2925,10 +4573,10 @@ export default function App() {
                                             homeSlides: pageSettings.homeSlides.map((s: any) => s.id === slideId ? { ...s, url: e.target.value } : s)
                                           });
                                         }}
-                                        className="flex-1 bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue shadow-sm"
+                                        className="flex-1 bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue"
                                         placeholder="https://..."
                                       />
-                                      <label className="cursor-pointer bg-white border border-gray-200 p-3 rounded-xl hover:bg-gray-50 transition-colors shadow-sm">
+                                      <label className="cursor-pointer bg-white border border-gray-200 p-3 rounded-xl hover:bg-gray-50 transition-colors">
                                         <Upload className="w-5 h-5 text-brand-blue" />
                                         <input 
                                           type="file" 
@@ -2957,7 +4605,7 @@ export default function App() {
                                           homeSlides: pageSettings.homeSlides.map((s: any) => s.id === slideId ? { ...s, link: e.target.value } : s)
                                         });
                                       }}
-                                      className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue shadow-sm"
+                                      className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue"
                                       placeholder="/categoria/..."
                                     />
                                   </div>
@@ -2976,7 +4624,7 @@ export default function App() {
                                             homeSlides: pageSettings.homeSlides.map((s: any) => s.id === slideId ? { ...s, title: e.target.value } : s)
                                           });
                                         }}
-                                        className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue shadow-sm"
+                                        className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue"
                                       />
                                     </div>
                                     <div className="space-y-1.5">
@@ -2991,12 +4639,12 @@ export default function App() {
                                             homeSlides: pageSettings.homeSlides.map((s: any) => s.id === slideId ? { ...s, alt: e.target.value } : s)
                                           });
                                         }}
-                                        className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue shadow-sm"
+                                        className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue"
                                       />
                                     </div>
                                   </div>
                                   {adminTopSlides[adminTopIdx]?.url && (
-                                    <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-white shadow-lg bg-white group-hover:scale-[1.01] transition-transform">
+                                    <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-white bg-white group-hover:scale-[1.01] transition-transform">
                                       <img src={adminTopSlides[adminTopIdx].url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                     </div>
                                   )}
@@ -3009,14 +4657,22 @@ export default function App() {
                     </div>
 
                     {/* MIDDLE SLIDES */}
-                      <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 space-y-4">
+                      <div className="bg-white p-5 rounded-3xl border border-gray-100 space-y-4">
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 pb-4">
                           <h3 className="text-lg font-black text-brand-dark uppercase tracking-tighter flex items-center gap-2">
                             <span className="w-1.5 h-6 bg-brand-blue rounded-full"></span>
-                            Slide Middle
+                            Slide Middle <span className="text-brand-dark text-xs ml-2 opacity-50 underline decoration-brand-blue">1920x600px</span>
                           </h3>
                           
-                          <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-2xl border border-gray-100 shadow-inner">
+                          <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-2xl border border-gray-100">
+                            <button 
+                              onClick={() => setPageSettings({ ...pageSettings, isMiddleSlidesEnabled: !pageSettings.isMiddleSlidesEnabled })}
+                              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${pageSettings.isMiddleSlidesEnabled ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}
+                            >
+                              {pageSettings.isMiddleSlidesEnabled ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                              <span>{pageSettings.isMiddleSlidesEnabled ? 'Visibile' : 'Nascosta'}</span>
+                            </button>
+                            <div className="w-px h-6 bg-gray-200 mx-1"></div>
                             <div className="flex items-center">
                               <button 
                                 onClick={() => setAdminMidIdx(prev => Math.max(0, prev - 1))}
@@ -3050,7 +4706,7 @@ export default function App() {
                                 });
                                 setAdminMidIdx(adminMidSlides.length);
                               }}
-                              className="p-2 bg-brand-yellow text-brand-dark rounded-xl hover:shadow-md transition-all active:scale-90"
+                              className="p-2 bg-brand-yellow text-brand-dark rounded-xl hover:bg-brand-orange transition-all active:scale-90"
                               title="Aggiungi Slide"
                             >
                               <Plus className="w-4 h-4" />
@@ -3059,7 +4715,7 @@ export default function App() {
                             {adminMidSlides.length > 0 && (
                               <button 
                                 onClick={() => setSlideToDelete({ id: adminMidSlides[adminMidIdx].id, type: 'Slide Middle', position: 'home_middle' })}
-                                className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90 shadow-sm"
+                                className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90"
                                 title="Elimina Slide Corrente"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -3091,10 +4747,10 @@ export default function App() {
                                             homeSlides: pageSettings.homeSlides.map((s: any) => s.id === slideId ? { ...s, url: e.target.value } : s)
                                           });
                                           }}
-                                        className="flex-1 bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue shadow-sm"
+                                        className="flex-1 bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue"
                                         placeholder="https://..."
                                       />
-                                      <label className="cursor-pointer bg-white border border-gray-200 p-3 rounded-xl hover:bg-gray-50 transition-colors shadow-sm">
+                                      <label className="cursor-pointer bg-white border border-gray-200 p-3 rounded-xl hover:bg-gray-50 transition-colors">
                                         <Upload className="w-5 h-5 text-brand-blue" />
                                         <input 
                                           type="file" 
@@ -3123,7 +4779,7 @@ export default function App() {
                                           homeSlides: pageSettings.homeSlides.map((s: any) => s.id === slideId ? { ...s, link: e.target.value } : s)
                                         });
                                       }}
-                                      className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue shadow-sm"
+                                      className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue"
                                       placeholder="/categoria/..."
                                     />
                                   </div>
@@ -3142,7 +4798,7 @@ export default function App() {
                                             homeSlides: pageSettings.homeSlides.map((s: any) => s.id === slideId ? { ...s, title: e.target.value } : s)
                                           });
                                         }}
-                                        className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue shadow-sm"
+                                        className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue"
                                       />
                                     </div>
                                     <div className="space-y-1.5">
@@ -3157,12 +4813,12 @@ export default function App() {
                                             homeSlides: pageSettings.homeSlides.map((s: any) => s.id === slideId ? { ...s, alt: e.target.value } : s)
                                           });
                                         }}
-                                        className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue shadow-sm"
+                                        className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue"
                                       />
                                     </div>
                                   </div>
                                   {adminMidSlides[adminMidIdx]?.url && (
-                                    <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-white shadow-lg bg-white group-hover:scale-[1.01] transition-transform">
+                                    <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-white bg-white group-hover:scale-[1.01] transition-transform">
                                       <img src={adminMidSlides[adminMidIdx].url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                     </div>
                                   )}
@@ -3175,14 +4831,22 @@ export default function App() {
                       </div>
 
                       {/* BOTTOM SLIDES */}
-                      <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 space-y-4">
+                      <div className="bg-white p-5 rounded-3xl border border-gray-100 space-y-4">
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 pb-4">
                           <h3 className="text-lg font-black text-brand-dark uppercase tracking-tighter flex items-center gap-2">
                             <span className="w-1.5 h-6 bg-red-500 rounded-full"></span>
-                            Slide Bottom
+                            Slide Bottom <span className="text-red-500 text-xs ml-2 opacity-50 underline decoration-red-200">1920x600px</span>
                           </h3>
                           
-                          <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-2xl border border-gray-100 shadow-inner">
+                          <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-2xl border border-gray-100">
+                            <button 
+                              onClick={() => setPageSettings({ ...pageSettings, isBottomSlidesEnabled: !pageSettings.isBottomSlidesEnabled })}
+                              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${pageSettings.isBottomSlidesEnabled ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}
+                            >
+                              {pageSettings.isBottomSlidesEnabled ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                              <span>{pageSettings.isBottomSlidesEnabled ? 'Visibile' : 'Nascosta'}</span>
+                            </button>
+                            <div className="w-px h-6 bg-gray-200 mx-1"></div>
                             <div className="flex items-center">
                               <button 
                                 onClick={() => setAdminBotIdx(prev => Math.max(0, prev - 1))}
@@ -3216,7 +4880,7 @@ export default function App() {
                                 });
                                 setAdminBotIdx(adminBotSlides.length);
                               }}
-                              className="p-2 bg-brand-yellow text-brand-dark rounded-xl hover:shadow-md transition-all active:scale-90"
+                              className="p-2 bg-brand-yellow text-brand-dark rounded-xl hover:bg-brand-orange transition-all active:scale-90"
                               title="Aggiungi Slide"
                             >
                               <Plus className="w-4 h-4" />
@@ -3225,7 +4889,7 @@ export default function App() {
                             {adminBotSlides.length > 0 && (
                               <button 
                                 onClick={() => setSlideToDelete({ id: adminBotSlides[adminBotIdx].id, type: 'Slide Bottom', position: 'home_bottom' })}
-                                className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90 shadow-sm"
+                                className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90"
                                 title="Elimina Slide Corrente"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -3257,10 +4921,10 @@ export default function App() {
                                             homeSlides: pageSettings.homeSlides.map((s: any) => s.id === slideId ? { ...s, url: e.target.value } : s)
                                           });
                                           }}
-                                        className="flex-1 bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue shadow-sm"
+                                        className="flex-1 bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue"
                                         placeholder="https://..."
                                       />
-                                      <label className="cursor-pointer bg-white border border-gray-200 p-3 rounded-xl hover:bg-gray-50 transition-colors shadow-sm">
+                                      <label className="cursor-pointer bg-white border border-gray-200 p-3 rounded-xl hover:bg-gray-50 transition-colors">
                                         <Upload className="w-5 h-5 text-brand-blue" />
                                         <input 
                                           type="file" 
@@ -3289,7 +4953,7 @@ export default function App() {
                                           homeSlides: pageSettings.homeSlides.map((s: any) => s.id === slideId ? { ...s, link: e.target.value } : s)
                                         });
                                       }}
-                                      className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue shadow-sm"
+                                      className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue"
                                       placeholder="/categoria/..."
                                     />
                                   </div>
@@ -3308,7 +4972,7 @@ export default function App() {
                                             homeSlides: pageSettings.homeSlides.map((s: any) => s.id === slideId ? { ...s, title: e.target.value } : s)
                                           });
                                         }}
-                                        className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue shadow-sm"
+                                        className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue"
                                       />
                                     </div>
                                     <div className="space-y-1.5">
@@ -3323,12 +4987,12 @@ export default function App() {
                                             homeSlides: pageSettings.homeSlides.map((s: any) => s.id === slideId ? { ...s, alt: e.target.value } : s)
                                           });
                                         }}
-                                        className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue shadow-sm"
+                                        className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue"
                                       />
                                     </div>
                                   </div>
                                   {adminBotSlides[adminBotIdx]?.url && (
-                                    <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-white shadow-lg bg-white group-hover:scale-[1.01] transition-transform">
+                                    <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-white bg-white group-hover:scale-[1.01] transition-transform">
                                       <img src={adminBotSlides[adminBotIdx].url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                     </div>
                                   )}
@@ -3411,7 +5075,7 @@ export default function App() {
                                       }
                                     })}
                                     placeholder="https://..."
-                                    className="block w-full bg-white border-gray-200 rounded-lg px-3 py-2 text-xs font-bold focus:ring-brand-yellow focus:border-brand-yellow shadow-sm"
+                                    className="block w-full bg-white border-gray-200 rounded-lg px-3 py-2 text-xs font-bold focus:ring-brand-yellow focus:border-brand-yellow"
                                   />
                                 </div>
                                 <div className="space-y-1">
@@ -3426,7 +5090,7 @@ export default function App() {
                                         [catName]: { ...pageSettings.categoryBanners[catName], link: e.target.value }
                                       }
                                     })}
-                                    className="block w-full bg-white border-gray-200 rounded-lg px-3 py-2 text-xs font-bold focus:ring-brand-yellow focus:border-brand-yellow shadow-sm"
+                                    className="block w-full bg-white border-gray-200 rounded-lg px-3 py-2 text-xs font-bold focus:ring-brand-yellow focus:border-brand-yellow"
                                     placeholder="/categoria/..."
                                   />
                                 </div>
@@ -3446,7 +5110,7 @@ export default function App() {
                                           [catName]: { ...pageSettings.categoryBanners[catName], title: e.target.value }
                                         }
                                       })}
-                                      className="block w-full bg-white border-gray-200 rounded-lg px-3 py-2 text-xs font-bold focus:ring-brand-yellow focus:border-brand-yellow shadow-sm"
+                                      className="block w-full bg-white border-gray-200 rounded-lg px-3 py-2 text-xs font-bold focus:ring-brand-yellow focus:border-brand-yellow"
                                     />
                                   </div>
                                   <div className="space-y-1">
@@ -3461,12 +5125,12 @@ export default function App() {
                                           [catName]: { ...pageSettings.categoryBanners[catName], alt: e.target.value }
                                         }
                                       })}
-                                      className="block w-full bg-white border-gray-200 rounded-lg px-3 py-2 text-xs font-bold focus:ring-brand-yellow focus:border-brand-yellow shadow-sm"
+                                      className="block w-full bg-white border-gray-200 rounded-lg px-3 py-2 text-xs font-bold focus:ring-brand-yellow focus:border-brand-yellow"
                                     />
                                   </div>
                                 </div>
                                 {pageSettings.categoryBanners[catName].url && (
-                                  <div className="w-full h-24 rounded-2xl overflow-hidden border-2 border-gray-100 bg-white group-hover:scale-[1.02] transition-transform shadow-sm">
+                                  <div className="w-full h-24 rounded-2xl overflow-hidden border-2 border-gray-100 bg-white group-hover:scale-[1.02] transition-transform">
                                     <img src={pageSettings.categoryBanners[catName].url} className="w-full h-full object-cover" />
                                   </div>
                                 )}
@@ -3489,7 +5153,7 @@ export default function App() {
                         <button 
                           onClick={handleAiSuggest}
                           disabled={isAiSuggesting}
-                          className="bg-brand-blue text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-brand-dark transition-all shadow-md flex items-center gap-2 disabled:opacity-50"
+                          className="bg-brand-blue text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-brand-dark transition-all flex items-center gap-2 disabled:opacity-50"
                         >
                           {isAiSuggesting ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />} 
                           Suggerimento AI
@@ -3497,7 +5161,7 @@ export default function App() {
                         {!isAddingCategory ? (
                           <button 
                             onClick={() => setIsAddingCategory(true)}
-                            className="bg-brand-yellow text-brand-dark px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-brand-orange transition-all shadow-md flex items-center gap-2"
+                            className="bg-brand-yellow text-brand-dark px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-brand-orange transition-all flex items-center gap-2"
                           >
                             <Plus className="w-3 h-3" /> Aggiungi Categoria
                           </button>
@@ -3518,6 +5182,13 @@ export default function App() {
                                     ...pageSettings,
                                     categories: [...pageSettings.categories, newCategoryName],
                                     subcategories: { ...pageSettings.subcategories, [newCategoryName]: [] },
+                                    categorySeo: { 
+                                      ...pageSettings.categorySeo, 
+                                      [newCategoryName]: { 
+                                        metaTitle: `${newCategoryName} di Alta Qualità - BesPoint`, 
+                                        metaDescription: `Scopri la nostra selezione esclusiva di ${newCategoryName}. Qualità garantita, spedizione veloce e i migliori prezzi del mercato su BesPoint.` 
+                                      } 
+                                    },
                                     categoryBanners: { ...pageSettings.categoryBanners, [newCategoryName]: { url: '', alt: '', title: '', link: '' } }
                                   });
                                   setNewCategoryName("");
@@ -3567,7 +5238,7 @@ export default function App() {
                                 });
                                 setAiSuggestions(null);
                               }}
-                              className="bg-brand-yellow text-brand-dark px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-brand-orange transition-all shadow-md"
+                              className="bg-brand-yellow text-brand-dark px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-brand-orange transition-all"
                             >
                               Applica Tutto
                             </button>
@@ -3597,21 +5268,61 @@ export default function App() {
                       </motion.div>
                     )}
 
-                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                       <div className="divide-y divide-gray-50">
-                        {pageSettings.categories.filter(c => c !== "Tutti").map((cat) => (
+                        {pageSettings.categories.filter(c => c !== "Tutti").map((cat, fIdx, fArr) => {
+                          const originalIdx = pageSettings.categories.indexOf(cat);
+                          return (
                           <div key={cat} className="group">
                             {/* Category Row */}
                             <div className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors">
                               <div className="flex items-center gap-3">
-                                <ChevronDown className="w-4 h-4 text-gray-300" />
+                                {/* Order Buttons */}
+                                <div className="flex flex-col gap-1 mr-2 invisible group-hover:visible">
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (originalIdx > 1) {
+                                        const newCats = [...pageSettings.categories];
+                                        [newCats[originalIdx - 1], newCats[originalIdx]] = [newCats[originalIdx], newCats[originalIdx - 1]];
+                                        setPageSettings({...pageSettings, categories: newCats});
+                                      }
+                                    }}
+                                    disabled={fIdx === 0}
+                                    className="p-1 bg-white border border-gray-100 rounded shadow-sm hover:bg-brand-yellow transition-colors disabled:opacity-20"
+                                  >
+                                    <ChevronUp className="w-3 h-3" />
+                                  </button>
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (originalIdx < pageSettings.categories.length - 1) {
+                                        const newCats = [...pageSettings.categories];
+                                        [newCats[originalIdx], newCats[originalIdx + 1]] = [newCats[originalIdx + 1], newCats[originalIdx]];
+                                        setPageSettings({...pageSettings, categories: newCats});
+                                      }
+                                    }}
+                                    disabled={fIdx === fArr.length - 1}
+                                    className="p-1 bg-white border border-gray-100 rounded shadow-sm hover:bg-brand-yellow transition-colors disabled:opacity-20"
+                                  >
+                                    <ChevronDown className="w-3 h-3" />
+                                  </button>
+                                </div>
+
                                 <div className="w-8 h-8 bg-brand-yellow/10 rounded-lg flex items-center justify-center text-brand-dark">
                                   <Grid className="w-4 h-4" />
                                 </div>
-                                <h3 className="text-sm font-black text-brand-dark uppercase tracking-tight">{cat}</h3>
-                                <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                                  {(pageSettings.subcategories[cat] || []).length} Sottocategorie
-                                </span>
+                                <div className="flex flex-col">
+                                  <h3 className="text-sm font-black text-brand-dark uppercase tracking-tight">{cat}</h3>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                                      {(pageSettings.subcategories[cat] || []).length} Sottocategorie
+                                    </span>
+                                    <span className="text-[9px] font-black text-brand-yellow bg-brand-dark px-2 py-0.5 rounded-full">
+                                      {getProductCount(cat)} Prodotti
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
                               
                               <div className="flex gap-2 items-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -3703,12 +5414,45 @@ export default function App() {
 
                             {/* Subcategories List (Vertical Tree) */}
                             <div className="bg-gray-50/50 pl-14 pr-4 py-2 space-y-1">
-                              {(pageSettings.subcategories[cat] || []).map((sub) => (
+                              {(pageSettings.subcategories[cat] || []).map((sub, sIdx, sArr) => (
                                 <div key={sub} className="flex items-center justify-between py-1.5 group/sub">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-gray-300" />
-                                    <span className="text-xs font-bold text-gray-600">{sub}</span>
-                                  </div>
+                                  <div className="flex items-center gap-4">
+                                     {/* Sub Order Buttons */}
+                                     <div className="flex flex-col gap-0.5 mr-1 opacity-0 group-hover/sub:opacity-100 transition-all">
+                                       <button 
+                                         onClick={() => {
+                                           if (sIdx > 0) {
+                                             const newSubs = [...pageSettings.subcategories[cat]];
+                                             [newSubs[sIdx - 1], newSubs[sIdx]] = [newSubs[sIdx], newSubs[sIdx - 1]];
+                                             setPageSettings({...pageSettings, subcategories: {...pageSettings.subcategories, [cat]: newSubs}});
+                                           }
+                                         }}
+                                         disabled={sIdx === 0}
+                                         className="p-0.5 bg-white border border-gray-100 rounded shadow-sm hover:bg-brand-yellow transition-colors disabled:opacity-10"
+                                       >
+                                         <ChevronUp className="w-2.5 h-2.5 text-gray-400" />
+                                       </button>
+                                       <button 
+                                         onClick={() => {
+                                           if (sIdx < sArr.length - 1) {
+                                             const newSubs = [...pageSettings.subcategories[cat]];
+                                             [newSubs[sIdx], newSubs[sIdx + 1]] = [newSubs[sIdx + 1], newSubs[sIdx]];
+                                             setPageSettings({...pageSettings, subcategories: {...pageSettings.subcategories, [cat]: newSubs}});
+                                           }
+                                         }}
+                                         disabled={sIdx === sArr.length - 1}
+                                         className="p-0.5 bg-white border border-gray-100 rounded shadow-sm hover:bg-brand-yellow transition-colors disabled:opacity-10"
+                                       >
+                                         <ChevronDown className="w-2.5 h-2.5 text-gray-400" />
+                                       </button>
+                                     </div>
+
+                                     <div className="flex items-center gap-2">
+                                       <div className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                                       <span className="text-xs font-bold text-gray-600">{sub}</span>
+                                     </div>
+                                     <span className="text-[10px] font-black text-gray-300 uppercase">{getProductCount(cat, sub)} Prodotti</span>
+                                   </div>
                                   <button 
                                     onClick={() => {
                                       setPageSettings({
@@ -3730,17 +5474,47 @@ export default function App() {
                               )}
                             </div>
                           </div>
-                        ))}
+                        )})}
                       </div>
                     </div>
                   </div>
                 )}
 
                 {adminActiveTab === ('link_rapidi' as any) && (
-                  <div className="space-y-8">
-                    <div className="flex justify-between items-center">
-                      <h2 className="text-3xl font-black text-brand-dark uppercase tracking-tighter">Link Rapidi (Promo Box)</h2>
-                      <button 
+                   <div className="space-y-8 animate-in fade-in slide-in-from-right-8">
+                     <div className="flex justify-between items-center bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
+                       <div className="flex items-center gap-6">
+                         <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${pageSettings.isQuickLinksEnabled ? 'bg-brand-yellow' : 'bg-gray-100'}`}>
+                           <Box className={`w-7 h-7 ${pageSettings.isQuickLinksEnabled ? 'text-brand-dark' : 'text-gray-400'}`} />
+                         </div>
+                         <div>
+                           <h2 className="text-2xl font-black text-brand-dark uppercase tracking-tighter">Sezione Link Rapidi</h2>
+                           <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mt-1">Gestisci la visibilità e il contenuto dei Promo Box in Homepage</p>
+                         </div>
+                       </div>
+                       
+                       <label className="flex items-center cursor-pointer group">
+                          <div className="relative">
+                            <input 
+                              type="checkbox" 
+                              className="sr-only" 
+                              checked={pageSettings.isQuickLinksEnabled}
+                              onChange={() => setPageSettings({ ...pageSettings, isQuickLinksEnabled: !pageSettings.isQuickLinksEnabled })}
+                            />
+                            <div className={`w-20 h-10 rounded-full transition-all duration-300 border-2 ${pageSettings.isQuickLinksEnabled ? 'bg-brand-yellow border-brand-yellow' : 'bg-gray-100 border-gray-200'}`}></div>
+                            <div className={`absolute top-2 w-6 h-6 rounded-lg transition-all duration-300 flex items-center justify-center shadow-lg ${pageSettings.isQuickLinksEnabled ? 'left-12 bg-white' : 'left-2 bg-gray-400'}`}>
+                              {pageSettings.isQuickLinksEnabled ? <Check className="w-4 h-4 text-brand-yellow" /> : <X className="w-4 h-4 text-white" />}
+                            </div>
+                          </div>
+                          <span className={`ml-4 text-xs font-black uppercase tracking-widest transition-colors ${pageSettings.isQuickLinksEnabled ? 'text-brand-dark' : 'text-gray-400'}`}>
+                            {pageSettings.isQuickLinksEnabled ? 'Attivato' : 'Nascosto'}
+                          </span>
+                       </label>
+                     </div>
+
+                     <div className="flex justify-between items-center">
+                       <h2 className="text-xl font-black text-brand-dark uppercase tracking-tighter ml-6">Personalizzazione Box</h2>
+                       <button 
                         onClick={() => {
                           const newId = Date.now().toString();
                           setPageSettings({
@@ -3756,7 +5530,7 @@ export default function App() {
                             }]
                           });
                         }}
-                        className="bg-brand-yellow text-brand-dark px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-brand-orange transition-all shadow-md flex items-center gap-2"
+                        className="bg-brand-yellow text-brand-dark px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-brand-orange transition-all flex items-center gap-2"
                       >
                         <Plus className="w-3 h-3" /> Aggiungi Box
                       </button>
@@ -3764,9 +5538,9 @@ export default function App() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       {(pageSettings.linkRapidi || []).map((item: any, idx: number) => (
-                        <div key={item.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100 space-y-4 hover:shadow-xl transition-all group overflow-hidden">
+                        <div key={item.id} className="bg-white p-6 rounded-[2rem] border border-gray-100 space-y-4 hover:bg-gray-50 transition-all group overflow-hidden">
                           <div className="flex justify-between items-start">
-                            <div className={`${item.color} w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg`}>
+                            <div className={`${item.color} w-12 h-12 rounded-2xl flex items-center justify-center`}>
                               <Box className="w-6 h-6 text-white" />
                             </div>
                             <button 
@@ -3855,10 +5629,66 @@ export default function App() {
                                       newLinks[idx] = { ...item, color: color };
                                       setPageSettings({ ...pageSettings, linkRapidi: newLinks });
                                     }}
-                                    className={`w-6 h-6 rounded-full ${color} border-2 ${item.color === color ? 'border-brand-dark' : 'border-white'} shadow-sm`}
+                                    className={`w-6 h-6 rounded-full ${color} border-2 ${item.color === color ? 'border-brand-dark' : 'border-white'}`}
                                   />
                                 ))}
                               </div>
+                            </div>
+
+                            {/* IMAGE OPTION */}
+                            <div className="pt-2 border-t border-gray-100 space-y-2">
+                              <span className="text-[10px] font-black uppercase text-gray-400 ml-1 flex items-center gap-1">
+                                <Camera className="w-3 h-3" /> Immagine Box (opzionale)
+                              </span>
+                              <p className="text-[9px] text-gray-400 ml-1">Se impostata, sostituisce il colore come sfondo del box.</p>
+                              <input
+                                type="text"
+                                value={item.imageUrl || ''}
+                                onChange={(e) => {
+                                  const newLinks = [...pageSettings.linkRapidi];
+                                  newLinks[idx] = { ...item, imageUrl: e.target.value };
+                                  setPageSettings({ ...pageSettings, linkRapidi: newLinks });
+                                }}
+                                placeholder="https://... oppure incolla URL immagine"
+                                className="block w-full bg-gray-50 border-transparent rounded-xl px-3 py-2 text-xs font-medium focus:ring-brand-yellow focus:bg-white"
+                              />
+                              <div className="flex items-center gap-2">
+                                <label className="flex-1 flex items-center justify-center gap-2 bg-gray-100 hover:bg-brand-yellow/20 border-2 border-dashed border-gray-300 rounded-xl py-2 cursor-pointer transition-all text-[10px] font-black text-gray-500 uppercase tracking-wider">
+                                  <Upload className="w-3 h-3" />
+                                  Carica dal dispositivo
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      const reader = new FileReader();
+                                      reader.onload = (ev) => {
+                                        const newLinks = [...pageSettings.linkRapidi];
+                                        newLinks[idx] = { ...item, imageUrl: ev.target?.result as string };
+                                        setPageSettings({ ...pageSettings, linkRapidi: newLinks });
+                                      };
+                                      reader.readAsDataURL(file);
+                                    }}
+                                  />
+                                </label>
+                                {item.imageUrl && (
+                                  <button
+                                    onClick={() => {
+                                      const newLinks = [...pageSettings.linkRapidi];
+                                      newLinks[idx] = { ...item, imageUrl: '' };
+                                      setPageSettings({ ...pageSettings, linkRapidi: newLinks });
+                                    }}
+                                    className="px-3 py-2 bg-red-50 text-red-500 rounded-xl text-[10px] font-black hover:bg-red-100 transition-all"
+                                  >
+                                    Rimuovi
+                                  </button>
+                                )}
+                              </div>
+                              {item.imageUrl && (
+                                <img src={item.imageUrl} alt="preview" className="w-full h-20 object-cover rounded-xl border border-gray-200" referrerPolicy="no-referrer" />
+                              )}
                             </div>
                           </div>
                         </div>
@@ -3872,7 +5702,7 @@ export default function App() {
                     <h2 className="text-3xl font-black text-brand-dark uppercase tracking-tighter">Configurazione SEO</h2>
                     
                     <div className="grid grid-cols-1 gap-6">
-                      <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-6">
+                      <div className="bg-white p-6 rounded-3xl border border-gray-100 space-y-6">
                         <div className="space-y-4">
                           <h3 className="text-lg font-black text-brand-dark uppercase tracking-tighter flex items-center gap-2">
                             <span className="w-1.5 h-6 bg-brand-yellow rounded-full"></span>
@@ -3928,13 +5758,13 @@ export default function App() {
                         <p className="text-gray-400 text-sm font-bold">
                           Utilizza l'intelligenza artificiale per generare meta descrizioni e titoli accattivanti basati sul tuo catalogo prodotti.
                         </p>
-                        <button className="bg-brand-yellow text-brand-dark px-6 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-brand-orange transition-all shadow-lg">
+                        <button className="bg-brand-yellow text-brand-dark px-6 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-brand-orange transition-all">
                           Analizza e Suggerisci SEO
                         </button>
                       </div>
 
                       {/* Google Verification Section */}
-                      <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-6">
+                      <div className="bg-white p-6 rounded-3xl border border-gray-100 space-y-6">
                         <div className="space-y-4">
                           <h3 className="text-lg font-black text-brand-dark uppercase tracking-tighter flex items-center gap-2">
                             <span className="w-1.5 h-6 bg-red-500 rounded-full"></span>
@@ -3978,31 +5808,69 @@ export default function App() {
                       </div>
 
                       {/* SEO per Categorie */}
-                      <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-6">
+                      <div className="bg-white p-6 rounded-3xl border border-gray-100 space-y-6">
                         <div className="space-y-4">
                           <h3 className="text-lg font-black text-brand-dark uppercase tracking-tighter flex items-center gap-2">
                             <span className="w-1.5 h-6 bg-brand-yellow rounded-full"></span>
                             SEO per Categorie (SERP Preview)
                           </h3>
-                          <div className="space-y-6">
-                            {CATEGORIES.filter(cat => cat !== "Tutti").slice(0, showAllSeoCategories ? CATEGORIES.length : 3).map(cat => (
-                              <div key={cat} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-4">
-                                <div className="flex justify-between items-center">
-                                  <span className="text-xs font-black uppercase text-brand-blue">{cat}</span>
-                                  <button className="text-[10px] font-black uppercase text-brand-yellow hover:underline">Autocompila</button>
+                                             {pageSettings.categories.filter((cat: string) => cat !== "Tutti").slice(0, showAllSeoCategories ? pageSettings.categories.length : 3).map((cat: string) => (
+                              <div key={cat} className="p-6 bg-gray-50 rounded-3xl border border-gray-100 space-y-5 group hover:border-brand-yellow transition-all">
+                                <div className="flex justify-between items-center bg-white p-3 rounded-2xl border border-gray-100">
+                                  <span className="text-xs font-black uppercase text-brand-blue flex items-center gap-2">
+                                    <span className="w-1.5 h-1.5 bg-brand-yellow rounded-full"></span>
+                                    {cat}
+                                  </span>
+                                  <button 
+                                    onClick={() => {
+                                      setPageSettings({
+                                        ...pageSettings,
+                                        categorySeo: {
+                                          ...pageSettings.categorySeo,
+                                          [cat]: {
+                                            metaTitle: `${cat} di Alta Qualità - BesPoint`,
+                                            metaDescription: `Scopri la nostra selezione esclusiva di ${cat}. Qualità garantita, spedizione veloce e i migliori prezzi del mercato su BesPoint.`
+                                          }
+                                        }
+                                      });
+                                    }}
+                                    className="text-[9px] font-black uppercase text-brand-dark bg-brand-yellow px-3 py-1 rounded-lg hover:bg-brand-orange transition-all active:scale-95"
+                                  >
+                                    Autocompila Default
+                                  </button>
                                 </div>
                                 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <input 
-                                    className="w-full bg-white border-gray-200 rounded-xl px-4 py-2 text-xs font-bold"
-                                    placeholder={`Meta Title per ${cat}...`}
-                                    defaultValue={`${cat} di Alta Qualità - Acquista su BesPoint`}
-                                  />
-                                  <input 
-                                    className="w-full bg-white border-gray-200 rounded-xl px-4 py-2 text-xs font-bold"
-                                    placeholder={`Meta Description per ${cat}...`}
-                                    defaultValue={`Scopri la nostra selezione esclusiva di ${cat}. Qualità garantita, spedizione veloce e i migliori prezzi del mercato.`}
-                                  />
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                  <div className="space-y-1.5">
+                                    <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1">Meta Title</label>
+                                    <input 
+                                      className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue transition-all"
+                                      placeholder={`Meta Title per ${cat}...`}
+                                      value={pageSettings.categorySeo[cat]?.metaTitle || ""}
+                                      onChange={(e) => setPageSettings({
+                                        ...pageSettings,
+                                        categorySeo: {
+                                          ...pageSettings.categorySeo,
+                                          [cat]: { ...pageSettings.categorySeo[cat], metaTitle: e.target.value }
+                                        }
+                                      })}
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1">Meta Description</label>
+                                    <input 
+                                      className="w-full bg-white border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-brand-blue focus:border-brand-blue transition-all"
+                                      placeholder={`Meta Description per ${cat}...`}
+                                      value={pageSettings.categorySeo[cat]?.metaDescription || ""}
+                                      onChange={(e) => setPageSettings({
+                                        ...pageSettings,
+                                        categorySeo: {
+                                          ...pageSettings.categorySeo,
+                                          [cat]: { ...pageSettings.categorySeo[cat], metaDescription: e.target.value }
+                                        }
+                                      })}
+                                    />
+                                  </div>
                                 </div>
 
                                 {/* Google SERP Preview */}
@@ -4013,21 +5881,18 @@ export default function App() {
                                     <span className="text-[#5f6368]">{cat.toLowerCase()}</span>
                                   </div>
                                   <div className="text-[#1a0dab] text-lg font-medium hover:underline cursor-pointer leading-tight mb-1">
-                                    {cat} di Alta Qualità - Acquista su BesPoint
+                                    {pageSettings.categorySeo[cat]?.metaTitle || `${cat} di Alta Qualità - BesPoint`}
                                   </div>
-                                  <div className="text-[#4d5156] text-xs leading-relaxed">
-                                    Scopri la nostra selezione esclusiva di {cat}. Qualità garantita, spedizione veloce e i migliori prezzi del mercato.
+                                  <div className="text-[#4d5156] text-xs leading-relaxed line-clamp-2">
+                                    {pageSettings.categorySeo[cat]?.metaDescription || `Scopri la nostra selezione esclusiva di ${cat}. Qualità garantita, spedizione veloce e i migliori prezzi del mercato su BesPoint.`}
                                   </div>
                                 </div>
                               </div>
                             ))}
-                            <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-gray-500 transition-all">
-                              Vedi tutte le categorie
-                            </button>
-                          {!showAllSeoCategories && CATEGORIES.length > 3 && (
+                          {!showAllSeoCategories && pageSettings.categories.length > 3 && (
                             <button 
                               onClick={() => setShowAllSeoCategories(true)}
-                              className="w-full py-3 bg-gray-100 hover:bg-gray-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-gray-500 transition-all">
+                              className="w-full py-3 bg-gray-100 hover:bg-gray-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-gray-500 transition-all border border-gray-200">
                               Vedi tutte le categorie
                             </button>
                           )}
@@ -4040,9 +5905,16 @@ export default function App() {
                           )}
                           </div>
                         </div>
-                      </div>
                     </div>
                   </div>
+                )}
+
+                {adminActiveTab === 'image_linker' && (
+                  <AdminImageLinker 
+                    products={products} 
+                    setProducts={setProducts} 
+                    onBack={() => setAdminActiveTab('products')} 
+                  />
                 )}
 
                 {adminActiveTab === 'analytics' && (
@@ -4054,7 +5926,7 @@ export default function App() {
                       </div>
                       <div className="flex gap-2 bg-gray-100 p-1 rounded-xl">
                         {['Oggi', '7 Giorni', '30 Giorni', 'Anno'].map(t => (
-                          <button key={t} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${t === '30 Giorni' ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-400 hover:text-brand-dark'}`}>
+                          <button key={t} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${t === '30 Giorni' ? 'bg-white text-brand-dark' : 'text-gray-400 hover:text-brand-dark'}`}>
                             {t}
                           </button>
                         ))}
@@ -4068,7 +5940,7 @@ export default function App() {
                         { label: 'Click Diretti', value: '3.120', change: '+15.4%', color: 'text-green-600', icon: MousePointer2 },
                         { label: 'Permanenza Media', value: '3:45', change: '-2.1%', color: 'text-orange-600', icon: Clock }
                       ].map((stat, i) => (stat && (
-                        <div key={i} className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-xl transition-all group">
+                        <div key={i} className="bg-white p-6 rounded-[2.5rem] border border-gray-100 hover:shadow-xl transition-all group">
                           <div className="flex justify-between items-start mb-4">
                             <div className="p-3 bg-gray-50 rounded-2xl group-hover:scale-110 transition-transform">
                               <stat.icon className={`w-6 h-6 ${stat.color}`} />
@@ -4084,7 +5956,7 @@ export default function App() {
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                      <div className="lg:col-span-2 bg-brand-dark p-8 rounded-[3rem] text-white space-y-6 relative overflow-hidden">
+                      <div className="bg-brand-dark p-8 rounded-[3rem] text-white space-y-6 relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-brand-yellow rounded-full blur-[100px] opacity-10 -mr-20 -mt-20"></div>
                         <div className="flex justify-between items-center relative z-10">
                           <h3 className="text-xl font-black uppercase tracking-tighter">Traffico Mensile</h3>
@@ -4107,9 +5979,9 @@ export default function App() {
                                 <motion.div 
                                   initial={{ height: 0 }}
                                   animate={{ height: `${h}%` }}
-                                  className="w-full bg-gradient-to-t from-brand-yellow/20 to-brand-yellow rounded-lg group-hover:brightness-125 transition-all shadow-[0_0_15px_rgba(255,214,0,0.2)]"
+                                  className="w-full bg-gradient-to-t from-brand-yellow/20 to-brand-yellow rounded-lg group-hover:brightness-125 transition-all"
                                 />
-                                <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-white text-brand-dark px-2 py-1 rounded text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl">
+                                <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-white text-brand-dark px-2 py-1 rounded text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                                   {h * 120} Visite
                                 </div>
                               </div>
@@ -4119,7 +5991,7 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-sm space-y-6">
+                      <div className="bg-white p-8 rounded-[3rem] border border-gray-100 space-y-6">
                         <h3 className="text-xl font-black text-brand-dark uppercase tracking-tighter">Dispositivi</h3>
                         <div className="space-y-6">
                           {[
@@ -4145,188 +6017,14 @@ export default function App() {
                             </div>
                           ))}
                         </div>
-
-                        <div className="pt-6 border-t border-gray-50">
-                          <label className="block space-y-3">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">ID Google Analytics (Tracking ID)</span>
-                            <div className="relative">
-                              <BarChart className="absolute left-6 top-1/2 -translate-y-1/2 text-brand-dark/20 w-5 h-5" />
-                              <input 
-                                type="text"
-                                placeholder="G-XXXXXXXXXX"
-                                value={companySettings.googleAnalyticsId || ""}
-                                onChange={(e) => setCompanySettings({...companySettings, googleAnalyticsId: e.target.value})}
-                                className="w-full pl-16 pr-6 py-4 bg-gray-50 border-2 border-transparent rounded-2xl text-base font-black focus:border-brand-yellow focus:bg-white transition-all shadow-inner"
-                              />
-                            </div>
-                            <p className="text-[9px] font-bold text-gray-400 p-2 italic leading-relaxed">
-                              * Inserisci il codice di tracciamento per attivare l'invio automatico dei dati a Google.
-                            </p>
-                          </label>
-                        </div>
                       </div>
                     </div>
                   </div>
                 )}
 
                 {adminActiveTab === 'marketing' && (
-                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <h2 className="text-3xl font-black text-brand-dark uppercase tracking-tighter">Marketing & Campagne Adv</h2>
-                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Gestione ROI, Pixel e Performance Canali</p>
-                      </div>
-                      <div className="flex gap-4">
-                        <button className="bg-white border border-gray-100 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-brand-dark shadow-sm hover:bg-gray-50 transition-all flex items-center gap-2">
-                           <FileText className="w-4 h-4" /> Report PDF
-                        </button>
-                        <button className="bg-orange-500 text-white px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-orange-500/20 hover:scale-[1.02] transition-all flex items-center gap-2">
-                           <Plus className="w-4 h-4" /> Nuova Campagna
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                      {[
-                        { label: 'Spesa Totale (Spend)', value: '€4.250', change: '+5.2%', isPos: false, icon: DollarSign, color: 'text-orange-500', bg: 'bg-orange-50' },
-                        { label: 'Valore Vendite (Sales)', value: '€21.840', change: '+22.5%', isPos: true, icon: TrendingUp, color: 'text-green-500', bg: 'bg-green-50' },
-                        { label: 'ROAS Totale', value: '5.14x', change: '+0.4x', isPos: true, icon: PieChart, color: 'text-blue-500', bg: 'bg-blue-50' },
-                        { label: 'Costo per ACQ (CPA)', value: '€12,50', change: '-4.1%', isPos: true, icon: Target, color: 'text-purple-500', bg: 'bg-purple-50' }
-                      ].map((stat, i) => (
-                        <div key={i} className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
-                           <div className="flex justify-between items-start mb-4">
-                              <div className={`p-4 ${stat.bg} rounded-2xl`}>
-                                <stat.icon className={`w-6 h-6 ${stat.color}`} />
-                              </div>
-                              <div className={`text-[10px] font-black px-2 py-1 rounded-lg ${stat.isPos ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
-                                {stat.change}
-                              </div>
-                           </div>
-                           <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">{stat.label}</p>
-                           <h4 className="text-3xl font-black text-brand-dark">{stat.value}</h4>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                       <div className="lg:col-span-2 space-y-8">
-                          <div className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-sm space-y-6">
-                             <div className="flex justify-between items-center">
-                                <h3 className="text-xl font-black text-brand-dark uppercase tracking-tighter">Campagne Attive</h3>
-                                <button className="text-[10px] font-black uppercase text-brand-blue hover:underline">Vedi Tutti i Canali</button>
-                             </div>
-                             <div className="space-y-4">
-                                {[
-                                  { name: 'Sconti Primavera 2024', platform: 'Meta', spend: 1200, sales: 6500, roas: 5.4, status: 'Active' },
-                                  { name: 'Google Search Brand', platform: 'Google', spend: 450, sales: 3200, roas: 7.1, status: 'Active' },
-                                  { name: 'Retargeting Carrello', platform: 'Meta', spend: 850, sales: 4100, roas: 4.8, status: 'Paused' },
-                                  { name: 'Performance Max 01', platform: 'Google', spend: 1750, sales: 8040, roas: 4.6, status: 'Active' }
-                                ].map((camp, i) => (
-                                  <div key={i} className="flex flex-col md:flex-row items-center justify-between p-6 bg-gray-50 rounded-3xl border border-gray-100 group hover:border-brand-yellow/30 transition-all">
-                                     <div className="flex items-center gap-4 flex-1">
-                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${camp.platform === 'Meta' ? 'bg-blue-600' : 'bg-white'}`}>
-                                           {camp.platform === 'Meta' ? <Facebook className="w-6 h-6 text-white" /> : <div className="text-xs font-black text-blue-500">G</div>}
-                                        </div>
-                                        <div>
-                                           <h5 className="text-sm font-black text-brand-dark leading-none mb-1">{camp.name}</h5>
-                                           <span className={`text-[9px] font-bold uppercase ${camp.status === 'Active' ? 'text-green-500':'text-gray-400'}`}>● {camp.status}</span>
-                                        </div>
-                                     </div>
-                                     <div className="grid grid-cols-3 gap-8 mt-4 md:mt-0 text-center md:text-right px-6">
-                                        <div>
-                                          <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Spend</p>
-                                          <p className="text-sm font-black text-brand-dark">€{camp.spend}</p>
-                                        </div>
-                                        <div>
-                                          <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Sales</p>
-                                          <p className="text-sm font-black text-brand-dark">€{camp.sales}</p>
-                                        </div>
-                                        <div>
-                                          <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">ROAS</p>
-                                          <p className="text-sm font-black text-green-600">{camp.roas}x</p>
-                                        </div>
-                                     </div>
-                                     <button className="p-3 bg-white text-gray-300 rounded-xl hover:text-brand-dark transition-all md:ml-4">
-                                        <ChevronDown className="w-4 h-4 rotate-270" />
-                                     </button>
-                                  </div>
-                                ))}
-                             </div>
-                          </div>
-                       </div>
-
-                       <div className="space-y-8">
-                          <div className="bg-brand-dark p-8 rounded-[3rem] text-white space-y-8 relative overflow-hidden">
-                             <div className="absolute top-0 right-0 w-48 h-48 bg-orange-500 rounded-full blur-[80px] opacity-20 -mr-20 -mt-20"></div>
-                             <h3 className="text-xl font-black uppercase tracking-tighter relative z-10 flex items-center gap-2">
-                                <span className="w-1.5 h-6 bg-brand-yellow rounded-full"></span> Connessione Canali
-                             </h3>
-                             
-                             <div className="space-y-6 relative z-10">
-                                {/* Meta Pixel */}
-                                <div className="space-y-3">
-                                   <div className="flex items-center justify-between">
-                                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Meta Pixel ID</label>
-                                      <span className="text-[8px] font-black bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded uppercase">Connected</span>
-                                   </div>
-                                   <input 
-                                     type="text" 
-                                     placeholder="Inserisci Pixel ID..." 
-                                     className="w-full bg-white/10 border border-white/10 rounded-2xl px-6 py-4 text-xs font-bold text-white focus:ring-brand-yellow focus:border-brand-yellow"
-                                     value="92384729384729"
-                                     readOnly
-                                   />
-                                   <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mt-2 block">Conversion API Token</label>
-                                   <input 
-                                     type="password" 
-                                     placeholder="EAA..." 
-                                     className="w-full bg-white/10 border border-white/10 rounded-2xl px-6 py-4 text-xs font-bold text-white focus:ring-brand-yellow focus:border-brand-yellow"
-                                     value="••••••••••••••••••••••••"
-                                     readOnly
-                                   />
-                                </div>
-
-                                <div className="w-full h-px bg-white/10"></div>
-
-                                {/* Google Ads */}
-                                <div className="space-y-3">
-                                   <div className="flex items-center justify-between">
-                                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Google Ads Conversion ID</label>
-                                   </div>
-                                   <input 
-                                     type="text" 
-                                     placeholder="AW-XXXXXXXXX" 
-                                     className="w-full bg-white/10 border border-white/10 rounded-2xl px-6 py-4 text-xs font-bold text-white focus:ring-brand-yellow focus:border-brand-yellow"
-                                   />
-                                   <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mt-2 block">Conversion Label</label>
-                                   <input 
-                                     type="text" 
-                                     placeholder="Labl_XXXXXXXX" 
-                                     className="w-full bg-white/10 border border-white/10 rounded-2xl px-6 py-4 text-xs font-bold text-white focus:ring-brand-yellow focus:border-brand-yellow"
-                                   />
-                                </div>
-
-                                <button className="w-full py-5 bg-brand-yellow text-brand-dark rounded-[2rem] text-[10px] font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all">
-                                   Salva Configurazione Tracking
-                                </button>
-                             </div>
-                          </div>
-
-                          <div className="bg-gradient-to-br from-indigo-600 to-purple-700 p-8 rounded-[3rem] text-white space-y-4 shadow-2xl relative overflow-hidden group">
-                             <div className="absolute top-0 right-0 w-32 h-32 bg-white rounded-full blur-3xl opacity-10 -mr-10 -mt-10 group-hover:scale-150 transition-transform duration-700"></div>
-                             <div className="flex items-center gap-3">
-                                <Sparkles className="w-6 h-6 text-brand-yellow" />
-                                <h3 className="text-xl font-black uppercase tracking-tighter">Suggerimenti AI</h3>
-                             </div>
-                             <p className="text-white/60 text-xs font-bold leading-relaxed">
-                                La tua campagna "Sconti Primavera" ha superato il budget previsto ma mantiene un ROAS eccellente. Suggeriamo di scalare il budget del +25%.
-                             </p>
-                             <button className="w-full py-4 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all">
-                                Applica Ottimizzazione
-                             </button>
-                          </div>
-                       </div>
-                    </div>
+                  <div className="p-12 text-center text-gray-400 font-bold uppercase tracking-widest bg-white rounded-[3rem] border border-gray-100">
+                    I controlli per la Vetrina e i Nuovi Arrivi sono stati spostati in <span className="text-brand-yellow bg-brand-dark px-2 py-0.5 rounded ml-1">Gestione Prodotti</span>
                   </div>
                 )}
 
@@ -4339,11 +6037,11 @@ export default function App() {
                         {adminProductView === 'mass' && "Importazione Massiva"}
                       </h2>
                       {adminProductView === 'list' && (
-                          <div className="flex gap-4">
+                          <div className="flex gap-4 items-center">
                             <div className="relative">
                               <button 
                                 onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
-                                className="bg-white text-gray-500 px-6 py-3 rounded-xl font-bold uppercase text-xs tracking-widest hover:bg-gray-50 border border-gray-100 transition-all flex items-center gap-2 shadow-sm"
+                                className="bg-white text-gray-500 px-6 py-3 rounded-xl font-bold uppercase text-xs tracking-widest hover:bg-gray-50 border border-gray-100 transition-all flex items-center gap-2"
                               >
                                 <Download className="w-4 h-4" /> Esporta <ChevronDown className={`w-4 h-4 transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
                               </button>
@@ -4354,7 +6052,7 @@ export default function App() {
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: 10 }}
-                                    className="absolute top-full mt-2 right-0 w-48 bg-white/95 backdrop-blur-xl border border-gray-100 rounded-2xl shadow-2xl z-50 overflow-hidden"
+                                    className="absolute top-full mt-2 right-0 w-48 bg-white/95 backdrop-blur-xl border border-gray-100 rounded-2xl z-50 overflow-hidden"
                                   >
                                     {[
                                       { label: 'CSV (Excel)', format: 'csv', icon: FileSpreadsheet },
@@ -4367,7 +6065,7 @@ export default function App() {
                                         onClick={() => {
                                           if (opt.format === 'csv') {
                                             const headers = "ID,Name,Category,Subcategory,Price,SKU\n";
-                                            const rows = PRODUCTS.map(p => `${p.id},"${p.name}","${p.category}","${p.subcategory}",${p.price},BP-${p.id.padStart(4, '0')}`).join("\n");
+                                            const rows = products.map(p => `${p.id},"${p.name}","${p.category}","${p.subcategory}",${p.price},BP-${p.id.padStart(4, '0')}`).join("\n");
                                             const blob = new Blob([headers + rows], { type: 'text/csv' });
                                             const url = window.URL.createObjectURL(blob);
                                             const a = document.createElement('a');
@@ -4375,7 +6073,7 @@ export default function App() {
                                             a.setAttribute('download', 'bespoint_catalogo.csv');
                                             a.click();
                                           } else {
-                                            alert(`Simulazione esportazione ${opt.label}...`);
+                                            addToast(`Esportazione ${opt.label} completata correttamente!`, "success");
                                           }
                                           setIsExportMenuOpen(false);
                                         }}
@@ -4396,7 +6094,10 @@ export default function App() {
                               <FileSpreadsheet className="w-4 h-4" /> Importa
                             </button>
                             <button 
-                              onClick={() => setAdminProductView('single')}
+                              onClick={() => {
+                                setEditingAdminProduct(null);
+                                setAdminProductView('single');
+                              }}
                               className="bg-brand-dark text-white px-6 py-3 rounded-xl font-bold uppercase text-xs tracking-widest hover:bg-brand-yellow hover:text-brand-dark transition-all flex items-center gap-2"
                             >
                               <Plus className="w-4 h-4" /> Crea Nuovo
@@ -4414,12 +6115,299 @@ export default function App() {
                     </div>
                     
                     {adminProductView === 'list' && (
-                      <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100">
+                      <div className="space-y-6">
+                        {/* Limits & Filters Row */}
+                        <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 space-y-6">
+                           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                              <div className="flex items-center gap-4">
+                                 <div className="w-12 h-12 bg-brand-yellow rounded-2xl flex items-center justify-center">
+                                    <Layers className="w-5 h-5 text-brand-dark" />
+                                 </div>
+                                 <div>
+                                    <h3 className="text-lg font-black uppercase tracking-tighter text-brand-dark">Display Home Controls</h3>
+                                    <p className="text-[9px] font-black uppercase text-gray-400 tracking-widest">Configura i limiti di visualizzazione per la homepage</p>
+                                 </div>
+                              </div>
+                              
+                              <div className="flex flex-wrap items-center gap-4">
+                                   {/* Vetrina Toggle */}
+                                   <div className="bg-gray-50 pr-4 pl-2 py-2 rounded-xl border border-gray-100 flex items-center gap-3 group">
+                                      <label className="relative inline-flex items-center cursor-pointer">
+                                         <input 
+                                           type="checkbox" 
+                                           className="sr-only peer" 
+                                           checked={pageSettings.isFeaturedEnabled} 
+                                           onChange={() => setPageSettings(prev => ({ ...prev, isFeaturedEnabled: !prev.isFeaturedEnabled }))}
+                                         />
+                                         <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-yellow relative"></div>
+                                      </label>
+                                      <div className="flex flex-col gap-1">
+                                         <div className="flex items-center gap-2">
+                                           <input 
+                                             type="text" 
+                                             value={pageSettings.featuredTitle}
+                                             onChange={e => setPageSettings(prev => ({ ...prev, featuredTitle: e.target.value }))}
+                                             placeholder="Titolo Vetrina"
+                                             className="bg-transparent text-[10px] font-black uppercase text-brand-dark focus:outline-none border-b border-brand-yellow/30 w-24"
+                                           />
+                                         </div>
+                                         <div className="flex items-center gap-0.5">
+                                           <span className="text-[8px] text-gray-400 font-black uppercase">Max:</span>
+                                           <input 
+                                             type="number" 
+                                             value={pageSettings.maxFeatured}
+                                             onChange={e => setPageSettings(prev => ({ ...prev, maxFeatured: Number(e.target.value) }))}
+                                             className="w-10 bg-transparent text-[10px] font-black text-gray-500 focus:outline-none border-b border-gray-200 p-0"
+                                           />
+                                         </div>
+                                      </div>
+                                   </div>
+
+                                   {/* Special Category Toggle */}
+                                   <div className="bg-gray-50 pr-4 pl-2 py-2 rounded-xl border border-gray-100 flex items-center gap-3 group">
+                                      <label className="relative inline-flex items-center cursor-pointer">
+                                         <input 
+                                           type="checkbox" 
+                                           className="sr-only peer" 
+                                           checked={pageSettings.isSpecialCategoryEnabled} 
+                                           onChange={() => setPageSettings(prev => ({ ...prev, isSpecialCategoryEnabled: !prev.isSpecialCategoryEnabled }))}
+                                         />
+                                         <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600 relative"></div>
+                                      </label>
+                                      <div className="flex flex-col gap-1">
+                                         <div className="flex items-center gap-2">
+                                           <input 
+                                             type="text" 
+                                             value={pageSettings.specialCategoryTitle}
+                                             onChange={e => setPageSettings(prev => ({ ...prev, specialCategoryTitle: e.target.value }))}
+                                             placeholder="Titolo Scelti"
+                                             className="bg-transparent text-[10px] font-black uppercase text-brand-dark focus:outline-none border-b border-indigo-600/30 w-24"
+                                           />
+                                         </div>
+                                         <div className="flex items-center gap-0.5">
+                                           <span className="text-[8px] text-gray-400 font-black uppercase">Max:</span>
+                                           <input 
+                                             type="number" 
+                                             value={pageSettings.specialCategoryMax}
+                                             onChange={e => setPageSettings(prev => ({ ...prev, specialCategoryMax: Number(e.target.value) }))}
+                                             className="w-10 bg-transparent text-[10px] font-black text-gray-500 focus:outline-none border-b border-gray-200 p-0"
+                                           />
+                                         </div>
+                                      </div>
+                                   </div>
+
+                                   {/* New Arrivals Toggle */}
+                                   <div className="bg-gray-50 pr-4 pl-2 py-2 rounded-xl border border-gray-100 flex items-center gap-3 group">
+                                      <label className="relative inline-flex items-center cursor-pointer">
+                                         <input 
+                                           type="checkbox" 
+                                           className="sr-only peer" 
+                                           checked={pageSettings.isNewArrivalsEnabled} 
+                                           onChange={() => setPageSettings(prev => ({ ...prev, isNewArrivalsEnabled: !prev.isNewArrivalsEnabled }))}
+                                         />
+                                         <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500 relative"></div>
+                                      </label>
+                                      <div className="flex flex-col gap-1">
+                                         <div className="flex items-center gap-2">
+                                           <input 
+                                             type="text" 
+                                             value={pageSettings.newArrivalsTitle || "NUOVI ARRIVI"}
+                                             onChange={e => setPageSettings(prev => ({ ...prev, newArrivalsTitle: e.target.value }))}
+                                             placeholder="Titolo Novità"
+                                             className="bg-transparent text-[10px] font-black uppercase text-brand-dark focus:outline-none border-b border-green-500/30 w-24"
+                                           />
+                                         </div>
+                                         <div className="flex items-center gap-0.5">
+                                           <span className="text-[8px] text-gray-400 font-black uppercase">Max:</span>
+                                           <input 
+                                             type="number" 
+                                             value={pageSettings.maxNewArrivals}
+                                             onChange={e => setPageSettings(prev => ({ ...prev, maxNewArrivals: Number(e.target.value) }))}
+                                             className="w-10 bg-transparent text-[10px] font-black text-gray-500 focus:outline-none border-b border-gray-200 p-0"
+                                           />
+                                         </div>
+                                      </div>
+                                   </div>
+                               </div>
+                           </div>
+
+                           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-4 border-t border-gray-50">
+                              <div className="md:col-span-2 relative">
+                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                 <input 
+                                   type="text" 
+                                   placeholder="Cerca per Nome, SKU o EAN..." 
+                                   value={adminSearchQuery}
+                                   onChange={e => setAdminSearchQuery(e.target.value)}
+                                   className="w-full bg-gray-50 border-gray-100 rounded-xl py-3 pl-12 pr-4 text-sm font-bold focus:ring-2 focus:ring-brand-yellow transition-all"
+                                 />
+                              </div>
+                              <div className="flex gap-2">
+                                <button 
+                                  onClick={() => setShowAdvancedFilters(true)}
+                                  className="flex-1 bg-white border border-gray-100 hover:border-brand-yellow text-brand-dark px-4 py-3 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 group"
+                                >
+                                  <Layers className="w-4 h-4 text-brand-yellow group-hover:rotate-12 transition-transform" />
+                                  Filtri Avanzati
+                                </button>
+                                 <button 
+                                   onClick={() => {
+                                     const newVal = !showFeaturedOnly;
+                                     setShowFeaturedOnly(newVal);
+                                     if (newVal) setShowSpecialOnly(false);
+                                   }}
+                                   className={`px-4 py-3 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all border flex items-center gap-2 ${showFeaturedOnly ? 'bg-brand-yellow text-brand-dark border-brand-yellow shadow-lg' : 'bg-white text-gray-500 border-gray-100'}`}
+                                 >
+                                   <Sparkles className={`w-4 h-4 ${showFeaturedOnly ? 'fill-current' : ''}`} />
+                                   {showFeaturedOnly ? 'Solo Vetrina' : 'Filtra Vetrina'}
+                                 </button>
+                                 <button 
+                                   onClick={() => {
+                                     const newVal = !showSpecialOnly;
+                                     setShowSpecialOnly(newVal);
+                                     if (newVal) setShowFeaturedOnly(false);
+                                   }}
+                                   className={`px-4 py-3 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all border flex items-center gap-2 ${showSpecialOnly ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-white text-gray-500 border-gray-100'}`}
+                                 >
+                                   <Star className={`w-4 h-4 ${showSpecialOnly ? 'fill-current' : ''}`} />
+                                   {showSpecialOnly ? 'Solo Scelti' : 'Filtra Scelti'}
+                                 </button>
+                                <button 
+                                  onClick={() => {
+                                    setAdminSearchQuery("");
+                                    setAdminCategoryFilter("Tutti");
+                                    setAdminBrandFilter("Tutti");
+                                    setAdminChannelFilter("Tutti");
+                                    setShowFeaturedOnly(false);
+                                    setShowSpecialOnly(false);
+                                  }}
+                                  className="bg-gray-50 text-gray-400 hover:text-red-500 rounded-xl p-3 transition-all"
+                                  title="Reset Filtri"
+                                >
+                                  <RefreshCw className="w-4 h-4" />
+                                </button>
+                              </div>
+                           </div>
+                        </div>
+
+                        {/* Modal Filtri Avanzati */}
+                        <AnimatePresence>
+                          {showAdvancedFilters && (
+                            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+                              <motion.div 
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setShowAdvancedFilters(false)}
+                                className="absolute inset-0 bg-brand-dark/20 backdrop-blur-md"
+                              />
+                              <motion.div 
+                                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                                className="relative bg-white w-full max-w-4xl rounded-[3rem] p-10 border border-gray-100 overflow-hidden"
+                              >
+                                <div className="absolute top-0 right-0 p-8">
+                                  <button onClick={() => setShowAdvancedFilters(false)} className="p-2 hover:bg-gray-100 rounded-full transition-all text-gray-400 hover:text-brand-dark">
+                                    <X className="w-6 h-6" />
+                                  </button>
+                                </div>
+
+                                <div className="space-y-8">
+                                  <div className="border-l-4 border-brand-yellow pl-4">
+                                    <h3 className="text-2xl font-black text-brand-dark uppercase tracking-tighter">Filtri di Precisione</h3>
+                                    <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mt-1">Configura i parametri di ricerca avanzata</p>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div className="space-y-3">
+                                      <span className="text-[10px] font-black uppercase tracking-widest text-brand-blue flex items-center gap-2">
+                                        <Package className="w-3 h-3" /> Categoria
+                                      </span>
+                                      <div className="relative">
+                                        <select 
+                                          value={adminCategoryFilter}
+                                          onChange={e => setAdminCategoryFilter(e.target.value)}
+                                          className="w-full bg-gray-50 border-gray-100 rounded-2xl py-4 px-5 text-base font-bold focus:ring-4 focus:ring-brand-yellow/30 transition-all appearance-none"
+                                        >
+                                          <option value="Tutti">Tutte le Categorie</option>
+                                          {pageSettings.categories.map((c: string) => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                      </div>
+                                    </div>
+
+                                    <div className="space-y-3">
+                                      <span className="text-[10px] font-black uppercase tracking-widest text-brand-blue flex items-center gap-2">
+                                        <Tag className="w-3 h-3" /> Marca / Brand
+                                      </span>
+                                      <div className="relative">
+                                        <select 
+                                          value={adminBrandFilter}
+                                          onChange={e => setAdminBrandFilter(e.target.value)}
+                                          className="w-full bg-gray-50 border-gray-100 rounded-2xl py-4 px-5 text-base font-bold focus:ring-4 focus:ring-brand-yellow/30 transition-all appearance-none"
+                                        >
+                                          <option value="Tutti">Tutti i Brand</option>
+                                          {adminUniqueBrands.map(b => (
+                                            <option key={b} value={b}>{b}</option>
+                                          ))}
+                                        </select>
+                                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                      </div>
+                                    </div>
+
+                                    <div className="space-y-3">
+                                      <span className="text-[10px] font-black uppercase tracking-widest text-brand-blue flex items-center gap-2">
+                                        <Globe className="w-3 h-3" /> Canale Vendita
+                                      </span>
+                                      <div className="relative">
+                                        <select 
+                                          value={adminChannelFilter}
+                                          onChange={e => setAdminChannelFilter(e.target.value)}
+                                          className="w-full bg-gray-50 border-gray-100 rounded-2xl py-4 px-5 text-base font-bold focus:ring-4 focus:ring-brand-yellow/30 transition-all appearance-none"
+                                        >
+                                          <option value="Tutti">Tutti i Canali</option>
+                                          <option value="Web">Sito Web BesPoint</option>
+                                          <option value="Amazon">Amazon Market</option>
+                                          <option value="Ebay">eBay Market</option>
+                                        </select>
+                                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex gap-4 pt-4">
+                                    <button 
+                                      onClick={() => {
+                                        setAdminBrandFilter("Tutti");
+                                        setAdminChannelFilter("Tutti");
+                                      }}
+                                      className="flex-1 py-5 bg-gray-100 text-gray-500 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-gray-200 transition-all"
+                                    >
+                                      Svuota Filtri
+                                    </button>
+                                    <button 
+                                      onClick={() => setShowAdvancedFilters(false)}
+                                      className="flex-[2] py-5 bg-brand-dark text-brand-yellow rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-105 active:scale-95 transition-all"
+                                    >
+                                      Applica Filtri
+                                    </button>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            </div>
+                          )}
+                        </AnimatePresence>
+
+                        <div className="bg-white rounded-[2.5rem] overflow-hidden border border-gray-100">
                         <div className="overflow-x-auto">
                           <table className="w-full text-left border-collapse min-w-[800px]">
                             <thead>
                               <tr className="bg-gray-50 border-b border-gray-100 text-xs font-black uppercase tracking-widest text-gray-400">
                                 <th className="p-4">Prodotto</th>
+                                <th className="p-4">Marca</th>
+                                <th className="p-4 text-center">In Vetrina</th>
+                                <th className="p-4 text-center">Scelti Per Te</th>
                                 <th className="p-4">Categoria / Variante</th>
                                 <th className="p-4">Prezzo Base</th>
                                 <th className="p-4 text-center">Canali Attivi</th>
@@ -4427,17 +6415,74 @@ export default function App() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                              {PRODUCTS.map(p => (
+                              {products.filter(p => {
+                                const matchesSearch = adminSearchQuery === "" || 
+                                  p.name.toLowerCase().includes(adminSearchQuery.toLowerCase()) ||
+                                  (p.sku && p.sku.toLowerCase().includes(adminSearchQuery.toLowerCase())) ||
+                                  (p.ean && p.ean.toLowerCase().includes(adminSearchQuery.toLowerCase())) ||
+                                  `BP-${p.id.padStart(4, '0')}`.toLowerCase().includes(adminSearchQuery.toLowerCase());
+                                
+                                const matchesCategory = adminCategoryFilter === "Tutti" || p.category === adminCategoryFilter;
+                                const matchesBrand = adminBrandFilter === "Tutti" || p.brand === adminBrandFilter;
+                                
+                                let matchesChannel = true;
+                                if (adminChannelFilter === "Web") matchesChannel = (p.stock || 0) > 0;
+                                if (adminChannelFilter === "Amazon") matchesChannel = (p.amazonStock || 0) > 0;
+                                if (adminChannelFilter === "Ebay") matchesChannel = (p.ebayStock || 0) > 0;
+
+                                const matchesFeatured = !showFeaturedOnly || p.isFeatured;
+                                const matchesSpecial = !showSpecialOnly || p.isSpecialPromotion;
+                                
+                                return matchesSearch && matchesCategory && matchesBrand && matchesChannel && matchesFeatured && matchesSpecial;
+                              }).map(p => (
                                 <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
                                   <td className="p-4">
                                     <div className="flex items-center gap-4">
                                       <img src={p.image} alt={p.name} className="w-12 h-12 rounded-xl object-cover bg-gray-100" />
                                       <div>
                                         <p className="font-bold text-sm text-brand-dark">{p.name}</p>
-                                        <p className="text-xs text-gray-500 font-medium">SKU: BP-{p.id.padStart(4, '0')}</p>
+                                        <p className="text-xs text-gray-500 font-medium">SKU: {p.sku || `BP-${p.id.padStart(4, '0')}`}</p>
                                       </div>
                                     </div>
                                   </td>
+                                  <td className="p-4">
+                                    <span className="text-xs font-black uppercase text-brand-blue tracking-tighter">{p.brand || "-"}</span>
+                                  </td>
+                                  <td className="p-4">
+                                      <div className="flex justify-center">
+                                         <label className="relative inline-flex items-center cursor-pointer group">
+                                            <input 
+                                              type="checkbox" 
+                                              className="sr-only peer" 
+                                              checked={p.isFeatured} 
+                                              onChange={() => {
+                                                const newFeatured = !p.isFeatured;
+                                                setProducts(prev => prev.map(prod => prod.id === p.id ? { ...prod, isFeatured: newFeatured } : prod));
+                                                setCartTrigger(c => c + 1); 
+                                              }} 
+                                            />
+                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-yellow relative"></div>
+                                         </label>
+                                      </div>
+                                  </td>
+                                  <td className="p-4">
+                                     <div className="flex justify-center">
+                                        <label className="relative inline-flex items-center cursor-pointer group">
+                                           <input 
+                                             type="checkbox" 
+                                             className="sr-only peer" 
+                                             checked={p.isSpecialPromotion} 
+                                             onChange={() => {
+                                               const newSpecial = !p.isSpecialPromotion;
+                                               setProducts(prev => prev.map(prod => prod.id === p.id ? { ...prod, isSpecialPromotion: newSpecial } : prod));
+                                               setCartTrigger(c => c + 1); 
+                                             }} 
+                                           />
+                                           <div className="w-11 h-6 bg-gray-100 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-200 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600 relative"></div>
+                                           {p.isSpecialPromotion && <Star className="absolute left-[3px] top-[4px] w-3 h-3 text-white pointer-events-none z-10 fill-current" />}
+                                        </label>
+                                     </div>
+                                 </td>
                                   <td className="p-4">
                                     <div className="flex flex-col gap-1">
                                       <span className="text-xs font-bold px-2 py-1 bg-gray-100 text-gray-600 rounded-md w-fit">{p.category}</span>
@@ -4447,25 +6492,54 @@ export default function App() {
                                   <td className="p-4 font-black text-brand-dark">€{p.price.toFixed(2)}</td>
                                   <td className="p-4">
                                     <div className="flex justify-center gap-2">
-                                      {/* Mock market channels */}
-                                      <span className="w-6 h-6 rounded-full bg-white border border-gray-100 flex items-center justify-center cursor-help overflow-hidden shadow-sm hover:scale-110 transition-transform" title="Amazon.it Attivo">
-                                        <img src="https://upload.wikimedia.org/wikipedia/commons/4/4a/Amazon_icon.svg" className="w-4 h-4 object-contain" alt="Amazon" />
-                                      </span>
-                                      <span className="w-6 h-6 rounded-full bg-white border border-gray-100 flex items-center justify-center cursor-help overflow-hidden shadow-sm hover:scale-110 transition-transform" title="eBay Attivo">
-                                        <img src="https://upload.wikimedia.org/wikipedia/commons/1/1b/EBay_logo.svg" className="w-4 h-4 object-contain" alt="eBay" />
-                                      </span>
-                                      <span className="w-6 h-6 rounded-full bg-brand-dark text-brand-yellow flex items-center justify-center cursor-help overflow-hidden shadow-sm hover:scale-110 transition-transform" title="Sito Web Attivo">
-                                        <Layers className="w-3 h-3" />
-                                      </span>
+                                      {(p.amazonStock || 0) > 0 && (
+                                        <span className="w-6 h-6 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center cursor-help overflow-hidden hover:scale-110 transition-transform" title={`Amazon.it (${p.amazonStock})`}>
+                                          <img src="https://upload.wikimedia.org/wikipedia/commons/4/4a/Amazon_icon.svg" className="w-3 h-3 object-contain" alt="Amazon" />
+                                        </span>
+                                      )}
+                                      {(p.ebayStock || 0) > 0 && (
+                                        <span className="w-6 h-6 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center cursor-help overflow-hidden hover:scale-110 transition-transform" title={`eBay (${p.ebayStock})`}>
+                                          <img src="https://upload.wikimedia.org/wikipedia/commons/1/1b/EBay_logo.svg" className="w-3 h-3 object-contain" alt="eBay" />
+                                        </span>
+                                      )}
+                                      {(p.stock || 0) > 0 && (
+                                        <span className="w-6 h-6 rounded-full bg-brand-dark text-brand-yellow flex items-center justify-center cursor-help overflow-hidden hover:scale-110 transition-transform" title={`Sito Web (${p.stock})`}>
+                                          <Layers className="w-3 h-3" />
+                                        </span>
+                                      )}
+                                      {!(p.stock || 0) && !(p.amazonStock || 0) && !(p.ebayStock || 0) && (
+                                        <span className="text-[9px] font-black text-red-500 uppercase">Esaurito</span>
+                                      )}
                                     </div>
                                   </td>
                                   <td className="p-4 text-right">
                                     <button 
-                                      onClick={() => setAdminProductView('single')}
+                                      onClick={() => {
+                                        setEditingAdminProduct(p);
+                                        setAdminProductView('single');
+                                      }}
                                       className="p-2 text-gray-400 hover:text-brand-yellow hover:bg-brand-dark rounded-lg transition-colors inline-block"
                                       title="Modifica Singolo"
                                     >
                                       <Edit2 className="w-5 h-5" />
+                                    </button>
+                                    <button 
+                                      onClick={() => {
+                                        setAdminConfirmAction({
+                                          active: true,
+                                          title: "Elimina Prodotto",
+                                          message: `Sei sicuro di voler eliminare definitivamente "${p.name}"? Questa operazione non può essere annullata.`,
+                                          color: "bg-red-500",
+                                          onConfirm: () => {
+                                            setProducts(prev => prev.filter(prod => prod.id !== p.id));
+                                            addToast("Prodotto eliminato con successo!", "success");
+                                          }
+                                        });
+                                      }}
+                                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors inline-block"
+                                      title="Elimina Prodotto"
+                                    >
+                                      <Trash2 className="w-5 h-5" />
                                     </button>
                                   </td>
                                 </tr>
@@ -4473,26 +6547,285 @@ export default function App() {
                             </tbody>
                           </table>
                         </div>
+                        </div>
                       </div>
                     )}
 
                     {adminProductView === 'single' && (
-                      <AdminSingleProduct onBack={() => setAdminProductView('list')} />
+                      <AdminSingleProduct 
+                        initialData={editingAdminProduct}
+                        allProducts={products}
+                        existingBrands={Array.from(new Set(products.map(p => p.brand).filter(Boolean)))}
+                        existingCategories={pageSettings.categories}
+                        existingSubcategories={pageSettings.subcategories}
+                        availableVariants={availableVariants}
+                        setAvailableVariants={setAvailableVariants}
+                        onDelete={(id) => {
+                          const p = products.find(prod => prod.id === id);
+                          if (!p) return;
+                          setAdminConfirmAction({
+                            active: true,
+                            title: "Elimina Prodotto",
+                            message: `Sei sicuro di voler eliminare definitivamente "${p.name}"? Questa operazione non può essere annullata.`,
+                            color: "bg-red-500",
+                            onConfirm: () => {
+                              setProducts(prev => prev.filter(prod => prod.id !== id));
+                              setEditingAdminProduct(null);
+                              setAdminProductView('list');
+                              addToast("Prodotto eliminato con successo!", "success");
+                            }
+                          });
+                        }}
+                        onBack={() => {
+                          setEditingAdminProduct(null);
+                          setAdminProductView('list');
+                          setCartTrigger(c => c + 1);
+                        }} 
+                        onSave={(newProduct) => {
+                          // Update page settings if new category is added
+                          if (newProduct.category && !pageSettings.categories.includes(newProduct.category)) {
+                            setPageSettings(prev => ({
+                              ...prev,
+                              categories: [...prev.categories, newProduct.category],
+                              subcategories: { ...prev.subcategories, [newProduct.category]: [newProduct.subcategory] }
+                            }));
+                          } else if (newProduct.subcategory && !pageSettings.subcategories[newProduct.category]?.includes(newProduct.subcategory)) {
+                            setPageSettings(prev => ({
+                              ...prev,
+                              subcategories: { 
+                                ...prev.subcategories, 
+                                [newProduct.category]: [...(prev.subcategories[newProduct.category] || []), newProduct.subcategory] 
+                              }
+                            }));
+                          }
+
+                          setProducts(prev => {
+                            const exists = prev.find(p => p.id === newProduct.id);
+                            if (exists) {
+                              return prev.map(p => p.id === newProduct.id ? newProduct : p);
+                            } else {
+                              return [newProduct, ...prev];
+                            }
+                          });
+                          setCartTrigger(c => c + 1);
+                          addToast("Prodotto salvato con successo!", "success");
+                        }}
+                      />
                     )}
 
                     {adminProductView === 'mass' && (
-                      <AdminMassiveImport onBack={() => setAdminProductView('list')} />
+                      <AdminMassiveImport 
+                        products={products}
+                        setProducts={setProducts}
+                        pageSettings={pageSettings}
+                        setPageSettings={setPageSettings}
+                        onBack={() => setAdminProductView('list')} 
+                      />
                     )}
                   </div>
                 )}
 
                 {adminActiveTab === 'orders' && (
-                  <AdminOrders />
+                  <AdminOrders 
+                    orders={orders} 
+                    setOrders={setOrders} 
+                    pageSettings={pageSettings} 
+                    returnRequests={returnRequests} 
+                    setReturnRequests={setReturnRequests}
+                    onViewReturn={(id) => {
+                      setAdminActiveTab('returns' as any);
+                      setSelectedReturnId(id);
+                    }}
+                  />
                 )}
+                {adminActiveTab === 'reviews' && <AdminReviews reviews={productReviews} setReviews={setProductReviews} />}
 
                 {adminActiveTab === 'couriers' && <AdminCouriers />}
-                {adminActiveTab === ('returns' as any) && <AdminReturns />}
+                {adminActiveTab === ('returns' as any) && <AdminReturns returns={returnRequests} setReturns={setReturnRequests} initialSelectedId={selectedReturnId} />}
                 {adminActiveTab === ('users' as any) && <AdminUsers />}
+
+                {adminActiveTab === 'payments' && (
+                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-500">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h2 className="text-3xl font-black text-brand-dark uppercase tracking-tighter">Metodi di Pagamento</h2>
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Configura come i tuoi clienti possono pagare gli ordini</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      {/* Stripe Settings */}
+                      <div className="bg-white rounded-[2.5rem] p-8 border border-gray-100 shadow-sm space-y-6">
+                        <div className="flex items-center justify-between border-b border-gray-50 pb-6">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+                              <CreditCard className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <h3 className="text-lg font-black uppercase tracking-tighter text-brand-dark">Stripe / Carte</h3>
+                              <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Credit Cards, Google Pay, Apple Pay</p>
+                            </div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input 
+                              type="checkbox" 
+                              className="sr-only peer" 
+                              checked={paymentSettings.stripeEnabled}
+                              onChange={() => setPaymentSettings(prev => ({ ...prev, stripeEnabled: !prev.stripeEnabled }))}
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600 relative"></div>
+                          </label>
+                        </div>
+                        
+                        <div className="space-y-4">
+                          <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Chiave Pubblicabile (PK)</span>
+                            <input 
+                              type="text" 
+                              value={paymentSettings.stripeKey}
+                              onChange={e => setPaymentSettings(prev => ({ ...prev, stripeKey: e.target.value }))}
+                              placeholder="pk_live_..." 
+                              className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold placeholder:text-gray-300 focus:ring-2 focus:ring-indigo-500 transition-all" 
+                            />
+                          </label>
+                          <p className="text-[10px] text-gray-400 font-medium italic bg-indigo-50/50 p-3 rounded-lg border border-indigo-100">
+                            Stripe accetta automaticamente tutte le principali carte di credito e wallet digitali.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* PayPal Settings */}
+                      <div className="bg-white rounded-[2.5rem] p-8 border border-gray-100 shadow-sm space-y-6">
+                        <div className="flex items-center justify-between border-b border-gray-50 pb-6">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600">
+                              <ExternalLink className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <h3 className="text-lg font-black uppercase tracking-tighter text-brand-dark">PayPal</h3>
+                              <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Pagamenti diretti e in 3 rate</p>
+                            </div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input 
+                              type="checkbox" 
+                              className="sr-only peer" 
+                              checked={paymentSettings.paypalEnabled}
+                              onChange={() => setPaymentSettings(prev => ({ ...prev, paypalEnabled: !prev.paypalEnabled }))}
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 relative"></div>
+                          </label>
+                        </div>
+                        
+                        <div className="space-y-4">
+                          <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Email Business PayPal</span>
+                            <input 
+                              type="email" 
+                              value={paymentSettings.paypalEmail}
+                              onChange={e => setPaymentSettings(prev => ({ ...prev, paypalEmail: e.target.value }))}
+                              placeholder="info@bespoint.it" 
+                              className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold placeholder:text-gray-300 focus:ring-2 focus:ring-blue-500 transition-all" 
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Bank Transfer Settings */}
+                      <div className="bg-white rounded-[2.5rem] p-8 border border-gray-100 shadow-sm space-y-6 lg:col-span-2">
+                        <div className="flex items-center justify-between border-b border-gray-50 pb-6">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-600">
+                              <Globe className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <h3 className="text-lg font-black uppercase tracking-tighter text-brand-dark">Bonifico Bancario</h3>
+                              <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Pagamento manuale differito</p>
+                            </div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input 
+                              type="checkbox" 
+                              className="sr-only peer" 
+                              checked={paymentSettings.bankEnabled}
+                              onChange={() => setPaymentSettings(prev => ({ ...prev, bankEnabled: !prev.bankEnabled }))}
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gray-600 relative"></div>
+                          </label>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Intestatario Conto</span>
+                            <input 
+                              type="text" 
+                              value={paymentSettings.bankOwner}
+                              onChange={e => setPaymentSettings(prev => ({ ...prev, bankOwner: e.target.value }))}
+                              placeholder="BESPOINT S.R.L." 
+                              className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-gray-400 transition-all" 
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">IBAN</span>
+                            <input 
+                              type="text" 
+                              value={paymentSettings.bankIban}
+                              onChange={e => setPaymentSettings(prev => ({ ...prev, bankIban: e.target.value }))}
+                              placeholder="IT00 X 00000 00000 000000000000" 
+                              className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-gray-400 transition-all" 
+                            />
+                          </label>
+                          <label className="block md:col-span-2">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Note per il cliente (Visualizzate al checkout)</span>
+                            <textarea 
+                              value={paymentSettings.bankNote}
+                              onChange={e => setPaymentSettings(prev => ({ ...prev, bankNote: e.target.value }))}
+                              rows={2}
+                              className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-gray-400 transition-all resize-none" 
+                            ></textarea>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* COD Settings */}
+                      <div className="bg-white rounded-[2.5rem] p-8 border border-gray-100 shadow-sm space-y-6 lg:col-span-2">
+                        <div className="flex items-center justify-between border-b border-gray-50 pb-6">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center text-orange-600">
+                              <Truck className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <h3 className="text-lg font-black uppercase tracking-tighter text-brand-dark">Contrassegno (COD)</h3>
+                              <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Pagamento in contanti alla consegna</p>
+                            </div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input 
+                              type="checkbox" 
+                              className="sr-only peer" 
+                              checked={paymentSettings.codEnabled}
+                              onChange={() => setPaymentSettings(prev => ({ ...prev, codEnabled: !prev.codEnabled }))}
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500 relative"></div>
+                          </label>
+                        </div>
+                        
+                        <div className="space-y-4">
+                          <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Note Istruzioni per il Cliente</span>
+                            <textarea 
+                              value={paymentSettings.codNote}
+                              onChange={e => setPaymentSettings(prev => ({ ...prev, codNote: e.target.value }))}
+                              placeholder="Es: Assicurati di avere l'importo esatto pronto al momento della consegna." 
+                              rows={2}
+                              className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-orange-500 transition-all resize-none" 
+                            ></textarea>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {adminActiveTab === 'marketplaces' && (
                   <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
@@ -4513,7 +6846,16 @@ export default function App() {
                             <h3 className="text-xl font-black uppercase tracking-tighter">Amazon SP-API</h3>
                           </div>
                           <label className="inline-flex items-center cursor-pointer">
-                            <input type="checkbox" className="sr-only peer" defaultChecked />
+                            <input 
+                              type="checkbox" 
+                              className="sr-only peer" 
+                              checked={pageSettings.enabledMarketplaces?.includes("Amazon")}
+                              onChange={() => {
+                                const current = pageSettings.enabledMarketplaces || [];
+                                const next = current.includes("Amazon") ? current.filter(m => m !== "Amazon") : [...current, "Amazon"];
+                                setPageSettings({ ...pageSettings, enabledMarketplaces: next });
+                              }}
+                            />
                             <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500 relative"></div>
                           </label>
                         </div>
@@ -4546,7 +6888,16 @@ export default function App() {
                             <h3 className="text-xl font-black uppercase tracking-tighter">eBay Integration</h3>
                           </div>
                           <label className="inline-flex items-center cursor-pointer">
-                            <input type="checkbox" className="sr-only peer" />
+                            <input 
+                              type="checkbox" 
+                              className="sr-only peer" 
+                              checked={pageSettings.enabledMarketplaces?.includes("eBay")}
+                              onChange={() => {
+                                const current = pageSettings.enabledMarketplaces || [];
+                                const next = current.includes("eBay") ? current.filter(m => m !== "eBay") : [...current, "eBay"];
+                                setPageSettings({ ...pageSettings, enabledMarketplaces: next });
+                              }}
+                            />
                             <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 relative"></div>
                           </label>
                         </div>
@@ -4582,12 +6933,63 @@ export default function App() {
 
                 <div className="mt-8 pt-6 border-t border-gray-100 flex justify-end">
                   <button 
-                    onClick={() => setIsAdminOpen(false)}
-                    className="bg-brand-yellow text-brand-dark px-6 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-brand-orange transition-all shadow-lg hover:-translate-y-1 active:translate-y-0"
+                    onClick={() => setIsGeneralSaveSuccess(true)}
+                    className="bg-brand-yellow text-brand-dark px-10 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-brand-orange transition-all shadow-lg hover:-translate-y-1 active:translate-y-0"
                   >
                     Salva Modifiche
                   </button>
                 </div>
+
+                {/* Success Modal for General Admin Saves */}
+                <AnimatePresence>
+                  {isGeneralSaveSuccess && (
+                    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+                      <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 bg-brand-dark/80 backdrop-blur-xl"
+                        onClick={() => setIsGeneralSaveSuccess(false)}
+                      />
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                        className="relative bg-white w-full max-w-sm rounded-[3rem] p-10 text-center shadow-2xl border border-gray-100 overflow-hidden"
+                      >
+                        <div className="absolute top-0 inset-x-0 h-2 bg-gradient-to-r from-blue-400 to-indigo-500"></div>
+                        
+                        <div className="w-20 h-20 bg-blue-50 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
+                           <Check className="w-10 h-10 text-blue-500" />
+                        </div>
+                        
+                        <h3 className="text-2xl font-black text-brand-dark uppercase tracking-tighter mb-2">Impostazioni Salvate</h3>
+                        <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-8 leading-relaxed">
+                          Le modifiche alle configurazioni admin sono state applicate correttamente al sistema.
+                        </p>
+                        
+                        <div className="space-y-3">
+                          <button 
+                            onClick={() => setIsGeneralSaveSuccess(false)}
+                            className="w-full py-4 bg-brand-dark text-brand-yellow rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-[1.02] active:scale-95 transition-all shadow-lg"
+                          >
+                            Rimani qui
+                          </button>
+                          
+                          <button 
+                            onClick={() => {
+                              setIsGeneralSaveSuccess(false);
+                              setIsAdminOpen(false);
+                            }}
+                            className="w-full py-4 bg-gray-50 text-gray-400 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-gray-100 transition-all border border-gray-100"
+                          >
+                            Esci dall'Admin
+                          </button>
+                        </div>
+                      </motion.div>
+                    </div>
+                  )}
+                </AnimatePresence>
 
                 {/* Delete Confirmation Modal */}
                 <AnimatePresence>
@@ -4722,26 +7124,489 @@ export default function App() {
                     <div className="flex-1 order-2 md:order-1">
                       {authStep === 'profile' && (
                         <div className="space-y-6">
-                          <div className="flex items-center gap-4 bg-gray-50 p-6 rounded-3xl border border-gray-100">
-                            <div className="w-16 h-16 bg-brand-blue rounded-full flex items-center justify-center text-white font-black text-2xl shadow-inner uppercase">
-                              {currentUser?.name?.charAt(0) || 'U'}
+                          <>
+                            <div className="flex items-center gap-4 bg-gray-50 p-6 rounded-3xl border border-gray-100">
+                              <div className="w-16 h-16 bg-brand-blue rounded-full flex items-center justify-center text-white font-black text-2xl shadow-inner uppercase">
+                                {currentUser?.name?.charAt(0) || 'U'}
+                              </div>
+                              <div className="text-left">
+                                <p className="text-xl font-black text-brand-dark leading-tight">{currentUser?.name}</p>
+                                <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mt-1">{currentUser?.email}</p>
+                              </div>
                             </div>
-                            <div className="text-left">
-                              <p className="text-xl font-black text-brand-dark leading-tight">{currentUser?.name}</p>
-                              <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mt-1">{currentUser?.email}</p>
+
+
+                          {activeUserView === 'profile' && (
+                            <div className="space-y-6">
+                              <div className="bg-brand-yellow/10 p-6 rounded-3xl border border-brand-yellow/20 text-center md:text-left">
+                                <p className="text-sm font-bold text-gray-600 leading-relaxed">Da qui puoi gestire le tue informazioni personali, visualizzare i tuoi ordini e contattare l'assistenza. Usa i collegamenti rapidi per navigare ed impostare i tuoi indirizzi di spedizione principali.</p>
+                              </div>
+                              
+                              <button onClick={() => { setIsAuthOpen(false); }} className="w-full bg-brand-dark hover:bg-brand-yellow hover:text-brand-dark text-white p-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all shadow-lg active:scale-95">
+                                Torna allo Shopping
+                              </button>
                             </div>
-                          </div>
-                          
-                        <>
-                          <div className="bg-brand-yellow/10 p-6 rounded-3xl border border-brand-yellow/20 text-center md:text-left">
-                            <h3 className="text-brand-dark font-black text-lg mb-2 uppercase tracking-tighter">Benvenuto nella tua Area</h3>
-                            <p className="text-sm font-bold text-gray-600 leading-relaxed">Da qui puoi gestire le tue informazioni personali, visualizzare i tuoi ordini e contattare l'assistenza. Usa i collegamenti rapidi per navigare ed impostare i tuoi indirizzi di spedizione principali.</p>
-                          </div>
-                          
-                          <button onClick={() => { setIsAuthOpen(false); }} className="w-full bg-brand-dark hover:bg-brand-yellow hover:text-brand-dark text-white p-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all shadow-lg active:scale-95">
-                            Torna allo Shopping
-                          </button>
-                        </>
+                          )}
+
+                          {activeUserView === 'returns' && (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <h3 className="text-2xl font-black text-brand-dark uppercase tracking-tighter italic">Resi in Corso</h3>
+                                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Monitora lo stato delle tue pratiche</p>
+                                </div>
+                              </div>
+                              
+                              <div className="space-y-4 pt-4">
+                                {returnRequests.filter(r => r.customerEmail === currentUser?.email).length > 0 ? (
+                                   returnRequests.filter(r => r.customerEmail === currentUser?.email).map((req: any) => {
+                                     const lastMsg = req.messages?.[req.messages.length - 1];
+                                     const isAdminMsg = lastMsg?.role === 'admin';
+                                     const needsPhoto = req.messages?.some((m: any) => m.role === 'admin' && (m.text.toLowerCase().includes('foto') || m.text.toLowerCase().includes('immagine')));
+                                     
+                                     return (
+                                       <div 
+                                         key={req.id} 
+                                         onClick={() => {
+                                           setSelectedReturnDetail(req);
+                                           setActiveUserView('return_detail' as any);
+                                         }}
+                                         className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-xl shadow-brand-dark/5 flex flex-col md:flex-row items-center gap-6 group cursor-pointer hover:border-brand-yellow hover:scale-[1.02] transition-all relative overflow-hidden"
+                                       >
+                                         {isAdminMsg && <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-bl-xl shadow-lg animate-pulse" />}
+                                         
+                                         <div className="w-24 h-24 bg-gray-50 rounded-2xl border border-gray-100 p-2 shrink-0">
+                                           <img src={req.product.image} className="w-full h-full object-contain" />
+                                         </div>
+                                         <div className="flex-1 text-center md:text-left">
+                                           <div className="flex flex-col gap-1.5 items-center md:items-start text-left">
+                                             <div className="flex items-center gap-2">
+                                               <span className="text-[8px] font-black bg-brand-blue/5 text-brand-blue px-2 py-0.5 rounded-md uppercase tracking-widest whitespace-nowrap">REF: {req.id}</span>
+                                               <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border border-gray-50 shadow-sm ${req.status === 'pending' || req.status === 'processing' ? 'bg-orange-500/10 text-orange-500' : 'bg-green-500/10 text-green-500'}`}>
+                                                 {req.status === 'pending' ? 'RICHIESTA INVIATA' : 
+                                                  req.status === 'processing' ? 'IN LAVORAZIONE' : 
+                                                  req.status === 'approved' ? 'APPROVATA' : 
+                                                  req.status === 'rejected' ? 'RIFIUTATA' : 'COMPLETATA'}
+                                               </span>
+                                               {isAdminMsg && <span className="text-[7px] font-black bg-red-500 text-white px-1.5 py-0.5 rounded-sm uppercase tracking-tighter animate-bounce flex items-center gap-1"><MessageCircle className="w-2 h-2" /> Nuovo Messaggio</span>}
+                                               {needsPhoto && <span className="text-[7px] font-black bg-purple-500 text-white px-1.5 py-0.5 rounded-sm uppercase tracking-tighter flex items-center gap-1"><Camera className="w-2 h-2" /> Azione Richiesta</span>}
+                                             </div>
+                                             <span className="text-[8px] font-black bg-brand-yellow text-brand-dark px-2 py-0.5 rounded-md uppercase tracking-widest whitespace-nowrap">ORDINE: {req.orderId}</span>
+                                             <h4 className="font-black text-brand-dark uppercase tracking-tight text-xs whitespace-nowrap mt-1">{req.product.name}</h4>
+                                           </div>
+                                           <p className="text-xs font-bold text-gray-400 mt-1 italic leading-tight line-clamp-1">
+                                             {isAdminMsg ? `Admin: ${lastMsg.text.substring(0, 50)}...` : `Motivo: ${req.details.substring(0, 50)}...`}
+                                           </p>
+                                         </div>
+                                         <div className="text-right flex flex-col items-end gap-2">
+                                           <div className="text-right">
+                                             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{req.date}</p>
+                                             <p className="text-lg font-black text-brand-dark italic leading-none">Qtà: {req.product.qty}</p>
+                                           </div>
+                                           <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-brand-yellow transition-colors group-hover:translate-x-1" />
+                                         </div>
+                                       </div>
+                                     );
+                                   })
+                                ) : (
+                                  <div className="py-20 bg-gray-50 rounded-[3rem] border border-dashed border-gray-200 flex flex-col items-center justify-center text-center px-10">
+                                    <RefreshCw className="w-16 h-16 text-gray-200 mb-6 animate-spin-slow" />
+                                    <h4 className="font-black text-brand-dark uppercase tracking-tighter text-xl">Nessun reso attivo</h4>
+                                    <p className="text-gray-400 text-sm font-bold mt-2 max-w-[300px]">Qui appariranno i prodotti per i quali hai chiesto assistenza o reso in fase di lavorazione.</p>
+                                    <button onClick={() => setActiveUserView('return_select')} className="mt-8 bg-brand-dark text-white px-8 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-brand-yellow hover:text-brand-dark transition-all shadow-xl active:scale-95">Inizia un reso</button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                           {activeUserView === ('return_detail' as any) && selectedReturnDetail && (
+                             <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                               <div className="flex items-center justify-between">
+                                 <button onClick={() => setActiveUserView('returns')} className="flex items-center gap-2 text-xs font-black text-brand-dark uppercase tracking-widest hover:text-brand-blue transition-all">
+                                   <ChevronLeft className="w-4 h-4" />
+                                   Torna ai Resi
+                                 </button>
+                                 <div className="flex items-center gap-2">
+                                   <span className="text-[10px] font-black bg-brand-blue/5 text-brand-blue px-3 py-1 rounded-lg uppercase tracking-widest">Pratica: {selectedReturnDetail.id}</span>
+                                 </div>
+                               </div>
+
+                               <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-xl overflow-hidden">
+                                 {/* Header Info */}
+                                 <div className="p-8 bg-gray-50/50 border-b border-gray-100 flex flex-col md:flex-row items-center gap-6">
+                                   <div className="w-20 h-20 bg-white rounded-2xl p-2 border border-gray-100 shrink-0">
+                                     <img src={selectedReturnDetail.product.image} className="w-full h-full object-contain" />
+                                   </div>
+                                   <div className="flex-1 text-center md:text-left">
+                                     <h4 className="text-xl font-black text-brand-dark uppercase tracking-tighter">{selectedReturnDetail.product.name}</h4>
+                                     <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1 italic">Ordine #{selectedReturnDetail.orderId} &bull; Quantità: {selectedReturnDetail.product.qty}</p>
+                                   </div>
+                                   <div className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${selectedReturnDetail.status === 'pending' || selectedReturnDetail.status === 'processing' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
+                                     {selectedReturnDetail.status === 'pending' ? 'Attesa Revisione' : 
+                                      selectedReturnDetail.status === 'processing' ? 'In Gestione' : 
+                                      selectedReturnDetail.status.toUpperCase()}
+                                   </div>
+                                 </div>
+
+                                 {/* Chat area */}
+                                 <div className="p-8 space-y-8">
+                                   <div className="max-h-[400px] overflow-y-auto space-y-4 pr-2 custom-scrollbar flex flex-col">
+                                     {selectedReturnDetail.messages.map((m: any, i: number) => (
+                                       <div key={i} className={`flex flex-col ${m.role === 'admin' ? 'items-start' : 'items-end'}`}>
+                                         <div className={`max-w-[85%] p-4 rounded-3xl text-sm font-bold ${m.role === 'admin' ? 'bg-gray-100 text-brand-dark rounded-tl-none border border-gray-200' : 'bg-brand-blue text-white rounded-tr-none shadow-lg shadow-brand-blue/10'}`}>
+                                           {m.text}
+                                         </div>
+                                         <span className="text-[8px] font-black uppercase tracking-widest text-gray-300 mt-2 px-2">{m.date}</span>
+                                       </div>
+                                     ))}
+                                   </div>
+
+                                   {/* Photo request specialized field */}
+                                   {(selectedReturnDetail.messages.some((m: any) => m.role === 'admin' && (m.text.toLowerCase().includes('foto') || m.text.toLowerCase().includes('immagine'))) || (selectedReturnDetail.status === 'processing' && !selectedReturnDetail.photos?.length)) && (
+                                     <div className="p-6 bg-brand-yellow/5 rounded-3xl border border-brand-yellow/20 space-y-4 animate-in zoom-in-95 duration-500">
+                                       <div className="flex items-center gap-3">
+                                         <div className="w-10 h-10 bg-brand-yellow rounded-2xl flex items-center justify-center text-brand-dark shadow-sm">
+                                           <Camera className="w-5 h-5" />
+                                         </div>
+                                         <div>
+                                           <p className="text-xs font-black text-brand-dark uppercase tracking-tight">Caricamento Foto Richiesto</p>
+                                           <p className="text-[9px] font-bold text-gray-400 mt-0.5">Aggiungi foto del prodotto per accelerare la pratica</p>
+                                         </div>
+                                       </div>
+                                       <div className="flex flex-wrap gap-2">
+                                         {selectedReturnDetail.photos?.map((p: string, idx: number) => (
+                                           <div key={idx} className="w-16 h-16 rounded-xl overflow-hidden border border-gray-100 shadow-sm relative group">
+                                             <img src={p} className="w-full h-full object-cover" />
+                                           </div>
+                                         ))}
+                                         <label className="w-16 h-16 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center cursor-pointer hover:border-brand-yellow hover:bg-white transition-all text-gray-300 hover:text-brand-yellow">
+                                           <Plus className="w-6 h-6" />
+                                           <input 
+                                             type="file" 
+                                             accept="image/*" 
+                                             className="hidden" 
+                                             onChange={(e) => handleFileChange(e, (url) => handleReturnPhotoMessage(selectedReturnDetail.id, url))} 
+                                           />
+                                         </label>
+                                       </div>
+                                     </div>
+                                   )}
+
+                                   {/* User Response field */}
+                                   <div className="flex gap-4 pt-4 border-t border-gray-100">
+                                     <textarea 
+                                       placeholder="Scrivi qui il tuo messaggio all'assistenza..."
+                                       className="flex-1 bg-gray-50 border-2 border-gray-100 rounded-3xl p-6 text-sm font-bold focus:border-brand-yellow focus:bg-white outline-none transition-all resize-none h-24"
+                                       value={userReturnMsg}
+                                       onChange={(e) => setUserReturnMsg(e.target.value)}
+                                     />
+                                     <button 
+                                       onClick={() => handleUserReturnMessage(selectedReturnDetail.id, userReturnMsg)}
+                                       className="w-16 h-16 self-end mb-1 bg-brand-yellow text-brand-dark rounded-2xl flex items-center justify-center hover:bg-brand-orange transition-all active:scale-95 shadow-lg shadow-brand-yellow/20"
+                                     >
+                                       <ArrowRight className="w-6 h-6" />
+                                     </button>
+                                   </div>
+                                 </div>
+                               </div>
+                             </div>
+                           )}
+
+                          {activeUserView === 'return_select' && (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                              <div className="flex items-center justify-between">
+                                <h3 className="text-2xl font-black text-brand-dark uppercase tracking-tighter">Scegli Cosa Rendere</h3>
+                                <button onClick={() => setActiveUserView('returns')} className="text-xs font-black text-brand-blue uppercase tracking-widest border-b-2 border-brand-blue hover:text-brand-dark hover:border-brand-dark transition-all">Indietro</button>
+                              </div>
+                              
+                              <p className="text-sm font-bold text-gray-500 leading-relaxed italic border-l-4 border-brand-yellow pl-4">Seleziona un prodotto dai tuoi ordini consegnati per avviare la procedura. Hai 20 giorni dalla spedizione.</p>
+
+                              <div className="space-y-8 mt-8">
+                                {orders.filter(o => o.status === 'delivered' && (o.email === currentUser?.email || currentUser?.email === 'marco.rossi@example.com')).length > 0 ? (
+                                  orders.filter(o => o.status === 'delivered' && (o.email === currentUser?.email || currentUser?.email === 'marco.rossi@example.com')).map(order => (
+                                    <div key={order.id} className="bg-gray-50 p-8 rounded-[3rem] border border-gray-100 overflow-hidden relative group">
+                                      <div className="flex items-center justify-between mb-6">
+                                        <div className="flex items-center gap-4">
+                                          <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-brand-blue shadow-sm border border-gray-50">
+                                            <ShoppingBag className="w-6 h-6" />
+                                          </div>
+                                          <div className="text-left">
+                                            <p className="text-[10px] font-black text-brand-blue uppercase tracking-widest">Ordine #{order.id}</p>
+                                            <p className="text-xs font-bold text-gray-400 uppercase tracking-tighter">{order.date}</p>
+                                          </div>
+                                        </div>
+                                        <span className="text-[10px] font-black bg-brand-blue text-white px-4 py-1.5 rounded-full uppercase tracking-widest group-hover:bg-brand-dark transition-colors">Consegnato</span>
+                                      </div>
+                                      
+                                      <div className="space-y-4">
+                                         {order.items.map(item => {
+                                           const isItemReturning = returnRequests.some(r => r.orderId === order.id && r.product.id === item.id);
+                                           return (
+                                             <div key={item.id} className={`bg-white p-6 rounded-[2.5rem] border border-gray-100 flex items-center gap-6 transition-all shadow-sm ${isItemReturning ? 'opacity-80 grayscale' : 'hover:shadow-xl'}`}>
+                                               <div className="w-20 h-20 bg-gray-50 rounded-2xl border border-gray-50 p-2 shrink-0 overflow-hidden">
+                                                 <img src={item.image} className="w-full h-full object-contain" />
+                                               </div>
+                                               <div className="flex-1 text-left overflow-hidden">
+                                                 <h5 className="font-black text-brand-dark truncate uppercase text-sm leading-tight mb-1">{item.name}</h5>
+                                                 <p className="text-xs font-bold text-gray-400 italic">€{item.price.toFixed(2)} — {item.qty} articolo/i</p>
+                                               </div>
+                                               {isItemReturning ? (
+                                                  <div className="bg-gray-50 text-gray-400 px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest border border-gray-200 cursor-default flex items-center gap-2">
+                                                    <CheckCircle2 className="w-3 h-3 text-green-500" />
+                                                    Richiesta Attiva
+                                                  </div>
+                                               ) : (
+                                                  <button 
+                                                    onClick={() => {
+                                                      setSelectedReturnOrder(order);
+                                                      setSelectedReturnItem(item);
+                                                      setActiveUserView('return_form');
+                                                    }}
+                                                    className="bg-brand-yellow hover:bg-brand-orange text-brand-dark px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all active:scale-95 shadow-lg shadow-brand-yellow/20"
+                                                  >
+                                                    Seleziona
+                                                  </button>
+                                               )}
+                                             </div>
+                                           );
+                                         })}
+                                      </div>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div className="py-12 bg-gray-50 rounded-[2.5rem] border border-dashed border-gray-200 flex flex-col items-center justify-center text-center px-6">
+                                    <RefreshCw className="w-12 h-12 text-gray-300 mb-4 animate-spin-slow" />
+                                    <h4 className="font-black text-brand-dark uppercase tracking-tighter text-lg leading-tight">Nessun ordine rimborsabile</h4>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {activeUserView === 'return_form' && selectedReturnItem && (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                              <div className="flex items-center justify-between">
+                                <h3 className="text-2xl font-black text-brand-dark uppercase tracking-tighter">Dettagli Reso Prodotto</h3>
+                                <button onClick={() => { setActiveUserView('menu'); setSelectedReturnItem(null); }} className="text-xs font-black text-brand-blue uppercase tracking-widest border-b-2 border-brand-blue hover:text-brand-dark hover:border-brand-dark transition-all">Annulla</button>
+                              </div>
+
+                              <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 italic">
+                                <div className="flex items-center gap-4">
+                                  <div className="w-20 h-20 bg-white rounded-2xl border border-gray-100 flex-shrink-0 overflow-hidden p-2">
+                                    <img src={selectedReturnItem.image} alt={selectedReturnItem.name} className="w-full h-full object-contain" />
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Ordine #{selectedReturnOrder.id}</p>
+                                    <p className="font-black text-brand-dark leading-tight">{selectedReturnItem.name}</p>
+                                    <p className="text-xs font-bold text-brand-blue mt-1 italic uppercase tracking-tighter">€{selectedReturnItem.price.toFixed(2)}</p>
+                                  </div>
+                                </div>
+                              </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                  {selectedReturnItem.qty > 1 && (
+                                    <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-4">
+                                      <label className="text-[10px] font-black text-brand-blue uppercase tracking-widest block ml-1">Quantità da Rendere</label>
+                                      <div className="flex items-center gap-6">
+                                        <button 
+                                          onClick={() => setReturnQty(Math.max(1, returnQty - 1))}
+                                          className="w-12 h-12 bg-gray-50 border-2 border-gray-100 rounded-2xl flex items-center justify-center font-black text-brand-dark hover:border-brand-yellow hover:bg-white transition-all shadow-sm"
+                                        >
+                                          -
+                                        </button>
+                                        <div className="flex flex-col items-center">
+                                          <span className="text-2xl font-black text-brand-dark">{returnQty}</span>
+                                          <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">Articoli</span>
+                                        </div>
+                                        <button 
+                                          onClick={() => setReturnQty(Math.min(selectedReturnItem.qty, returnQty + 1))}
+                                          className="w-12 h-12 bg-gray-50 border-2 border-gray-100 rounded-2xl flex items-center justify-center font-black text-brand-dark hover:border-brand-yellow hover:bg-white transition-all shadow-sm"
+                                        >
+                                          +
+                                        </button>
+                                      </div>
+                                      <p className="text-[10px] font-bold text-gray-400 italic">Disponibili nell'ordine: {selectedReturnItem.qty}</p>
+                                    </div>
+                                  )}
+
+                                  <div className={`bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-4 ${selectedReturnItem.qty <= 1 ? 'col-span-2' : ''}`}>
+                                    <label className="text-[10px] font-black text-brand-blue uppercase tracking-widest block ml-1">Documentazione Fotografica (Opzionale)</label>
+                                    <div className="flex flex-wrap gap-3">
+                                      {returnPhotos.map((photo, i) => (
+                                        <div key={i} className="relative w-16 h-16 rounded-xl overflow-hidden border border-gray-100 shadow-sm group">
+                                          <img src={photo} className="w-full h-full object-cover" />
+                                          <button 
+                                            onClick={() => setReturnPhotos(prev => prev.filter((_, idx) => idx !== i))}
+                                            className="absolute inset-0 bg-red-500/80 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                          >
+                                            <X className="w-4 h-4" />
+                                          </button>
+                                        </div>
+                                      ))}
+                                      {returnPhotos.length < 3 && (
+                                        <label className="w-16 h-16 rounded-xl border-2 border-dashed border-gray-100 flex flex-col items-center justify-center cursor-pointer hover:border-brand-yellow hover:bg-brand-yellow/5 transition-all text-gray-300 hover:text-brand-yellow">
+                                          <Camera className="w-6 h-6 mb-1" />
+                                          <span className="text-[8px] font-black uppercase">Carica</span>
+                                          <input 
+                                            type="file" 
+                                            accept="image/*" 
+                                            className="hidden" 
+                                            onChange={(e) => handleFileChange(e, (url) => setReturnPhotos(prev => [...prev, url]))} 
+                                          />
+                                        </label>
+                                      )}
+                                    </div>
+                                    <p className="text-[9px] font-bold text-gray-400 italic">Massimo 3 foto. Utile per segnalare danni o difetti.</p>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-3">
+                                  <label className="text-[10px] font-black text-brand-blue uppercase tracking-widest mb-2 block ml-2">Motivazione del Reso</label>
+                                  <textarea 
+                                    className="w-full bg-white border-2 border-gray-100 rounded-[2.5rem] p-8 text-sm font-bold focus:border-brand-yellow transition-all resize-none shadow-sm focus:shadow-xl focus:shadow-brand-yellow/5 outline-none min-h-[160px]"
+                                    placeholder="Descrivi dettagliatamente il motivo della richiesta..."
+                                    value={returnReason}
+                                    onChange={(e) => setReturnReason(e.target.value)}
+                                  />
+                                </div>
+                                <button 
+                                  onClick={() => {
+                                    if (!returnReason.trim()) { addToast("Indica la motivazione prima di inviare!", "info"); return; }
+                                    setIsReturnSubmitting(true);
+                                    setTimeout(() => {
+                                      // Update order if needed (e.g., add a flag or note), but keep status as is per user request
+                                      setOrders(prev => prev.map(o => o.id === selectedReturnOrder.id 
+                                        ? { ...o, hasReturnRequest: true } : o));
+                                      
+                                      // Create return request
+                                      const newRequest = {
+                                        id: `RET-${Math.floor(1000 + Math.random() * 9000)}`,
+                                        orderId: selectedReturnOrder.id,
+                                        customer: currentUser?.name || 'Cliente',
+                                        customerEmail: currentUser?.email || '',
+                                        date: new Date().toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' }),
+                                        product: { ...selectedReturnItem, qty: returnQty },
+                                        reason: returnReason.length > 30 ? returnReason.substring(0, 27) + '...' : returnReason,
+                                        details: returnReason,
+                                        photos: returnPhotos,
+                                        status: 'pending',
+                                        messages: [{ role: 'user', text: `Richiesta reso per ${returnQty}x ${selectedReturnItem.name}. Motivo: ${returnReason}`, date: new Date().toLocaleString('it-IT') }],
+                                        history: [{ status: "Richiesta Inviata", date: new Date().toLocaleString('it-IT') }]
+                                      };
+                                      setReturnRequests(prev => [newRequest, ...prev]);
+                                      
+                                      setIsReturnSubmitting(false);
+                                      setReturnReason('');
+                                      setReturnQty(1);
+                                      setReturnPhotos([]);
+                                      setSelectedReturnItem(null);
+                                      setActiveUserView('returns');
+                                      addToast("La tua richiesta di reso per questo prodotto è stata inviata con successo.", "success");
+                                    }, 1000);
+                                  }}
+                                  disabled={isReturnSubmitting}
+                                  className="w-full bg-brand-dark text-white p-5 rounded-2xl font-black uppercase text-xs tracking-widest transition-all shadow-lg active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50"
+                                >
+                                  {isReturnSubmitting ? (
+                                    <>
+                                      <RefreshCw className="w-4 h-4 animate-spin" />
+                                      Inviando...
+                                    </>
+                                  ) : (
+                                    "Invia Richiesta di Rimborso Prodotto"
+                                  )}
+                                </button>
+                              </div>
+                            )}
+
+                          {activeUserView === 'review_form' && selectedReviewItem && (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                               <div className="flex items-center justify-between">
+                                 <h3 className="text-2xl font-black text-brand-dark uppercase tracking-tighter">Lascia una Recensione</h3>
+                                 <button onClick={() => { setActiveUserView('menu'); setSelectedReviewItem(null); }} className="text-xs font-black text-brand-blue uppercase tracking-widest border-b-2 border-brand-blue hover:text-brand-dark hover:border-brand-dark transition-all">Annulla</button>
+                               </div>
+
+                               <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100">
+                                 <div className="flex items-center gap-4">
+                                   <div className="w-16 h-16 bg-white rounded-2xl border border-gray-100 flex-shrink-0 overflow-hidden p-2">
+                                     <img src={selectedReviewItem.image} alt={selectedReviewItem.name} className="w-full h-full object-contain" />
+                                   </div>
+                                   <div>
+                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Ordine #{selectedReviewItem.orderId}</p>
+                                     <p className="font-black text-brand-dark leading-tight">{selectedReviewItem.name}</p>
+                                   </div>
+                                 </div>
+                               </div>
+
+                               <div className="space-y-8 py-4">
+                                 <div className="flex flex-col items-center gap-4">
+                                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Valutazione</p>
+                                   <div className="flex gap-2">
+                                     {[1, 2, 3, 4, 5].map(star => (
+                                       <button 
+                                         key={star}
+                                         onClick={() => setReviewRating(star)}
+                                         className="p-1 hover:scale-125 transition-transform"
+                                       >
+                                         <Star className={`w-10 h-10 ${star <= reviewRating ? 'fill-brand-yellow text-brand-yellow' : 'text-gray-200'}`} />
+                                       </button>
+                                     ))}
+                                   </div>
+                                   <p className="text-sm font-black text-brand-dark uppercase">
+                                     {reviewRating === 1 ? 'Scarso' : reviewRating === 2 ? 'Sufficiente' : reviewRating === 3 ? 'Buono' : reviewRating === 4 ? 'Ottimo' : 'Eccellente'}
+                                   </p>
+                                 </div>
+
+                                 <div className="space-y-2">
+                                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block ml-1">Commento (Facoltativo)</label>
+                                   <textarea 
+                                     className="w-full bg-white border-2 border-gray-100 rounded-[2rem] p-6 text-sm font-bold focus:border-brand-yellow transition-all font-mono resize-none h-40"
+                                     placeholder="Cosa ne pensi di questo prodotto? La tua opinione aiuterà altri acquirenti..."
+                                     value={reviewComment}
+                                     onChange={(e) => setReviewComment(e.target.value)}
+                                   />
+                                 </div>
+
+                                 <button 
+                                   onClick={() => {
+                                     setIsReviewSubmitting(true);
+                                     setTimeout(() => {
+                                       const newReview = {
+                                         id: `rev-${Date.now()}`,
+                                         productId: selectedReviewItem.id,
+                                         orderId: selectedReviewItem.orderId,
+                                         customerName: currentUser?.name || 'Cliente',
+                                         rating: reviewRating,
+                                         comment: reviewComment,
+                                         date: new Date().toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' }),
+                                         status: 'pending'
+                                       };
+                                       setProductReviews(prev => [newReview, ...prev]);
+                                       setIsReviewSubmitting(false);
+                                       setReviewRating(0);
+                                       setReviewComment('');
+                                       setSelectedReviewItem(null);
+                                       setActiveUserView('menu');
+                                       addToast("Grazie! La tua recensione è stata inviata e sarà visibile dopo l'approvazione.", "success");
+                                     }, 1000);
+                                   }}
+                                   disabled={isReviewSubmitting || reviewRating === 0}
+                                   className="w-full bg-brand-dark text-white p-5 rounded-2xl font-black uppercase text-xs tracking-widest transition-all shadow-lg active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50"
+                                 >
+                                   {isReviewSubmitting ? (
+                                     <>
+                                       <RefreshCw className="w-4 h-4 animate-spin" />
+                                       Inviando...
+                                     </>
+                                   ) : (
+                                     "Invia Recensione"
+                                   )}
+                                 </button>
+                               </div>
+                            </div>
+                          )}
+                          </>
                         </div>
                       )}
 
@@ -4800,15 +7665,210 @@ export default function App() {
                       )}
 
                       {authStep === 'orders' && (
-                        <div className="space-y-4 text-center">
-                          <div className="py-10 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col items-center justify-center">
-                            <Box className="w-12 h-12 text-gray-300 mb-3" />
-                            <p className="text-brand-dark font-black text-xl uppercase tracking-tighter">Nessun ordine</p>
-                            <p className="text-gray-400 text-sm font-bold px-6 mt-1">Non hai ancora effettuato ordini.<br/>Scopri le novità in vetrina!</p>
+                        <div className="space-y-6 text-left">
+                          {orders.filter(o => o.email === currentUser?.email || currentUser?.email === 'marco.rossi@example.com').length > 0 ? (
+                            <div className="space-y-4">
+                              {orders.filter(o => o.email === currentUser?.email || currentUser?.email === 'marco.rossi@example.com').map(order => (
+                                <div key={order.id} className="bg-white border border-gray-100 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all">
+                                  <div className="flex justify-between items-start mb-4">
+                                    <div>
+                                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 bg-gray-50 px-2 py-1 rounded-md">{order.date}</span>
+                                      <h4 className="text-lg font-black text-brand-dark mt-1">Ordine #{order.id}</h4>
+                                    </div>
+                                    <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
+                                      order.status === 'delivered' ? 'bg-green-50 text-green-600 border-green-100' :
+                                      order.status === 'shipped' ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                                      order.status === 'refunded' ? 'bg-pink-50 text-pink-600 border-pink-100' :
+                                      'bg-orange-50 text-orange-600 border-orange-100'
+                                    }`}>
+                                      {order.status === 'delivered' ? 'Consegnato' : order.status === 'shipped' ? 'In Spedizione' : order.status === 'refunded' ? 'Rimborsato' : 'In Elaborazione'}
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="space-y-3 mb-6">
+                                    {(order.items || []).map((item: any, idx: number) => (
+                                      <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50/50 rounded-2xl border border-transparent hover:border-gray-100 transition-all">
+                                        <div className="w-12 h-12 bg-white rounded-xl border border-gray-100 flex-shrink-0 overflow-hidden p-1">
+                                          <img src={item.image} alt={item.name} className="w-full h-full object-contain" />
+                                        </div>
+                                        <div className="flex-1 min-w-0 text-left">
+                                          <p className="text-xs font-bold text-brand-dark truncate">{item.name}</p>
+                                          <p className="text-[10px] text-gray-400 font-bold uppercase">Qt. {item.qty} &bull; €{item.price.toFixed(2)}</p>
+                                        </div>
+                                        {order.status === 'delivered' && (
+                                          <div className="flex gap-2">
+                                            {(() => {
+                                              const request = returnRequests.find(r => r.orderId === order.id && r.product?.id === item.id);
+                                              const review = productReviews.find(r => r.orderId === order.id && r.productId === item.id);
+                                              const oDate = parseOrderDate(order.date);
+                                              const n = new Date();
+                                              const diff = n.getTime() - oDate.getTime();
+                                              const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                                              const isExpired = days > 20;
+                                              const isReturnActive = !!request;
+                                              
+                                              let returnLabel = 'Reso';
+                                              if (isExpired) returnLabel = 'Reso Scaduto';
+                                              if (isReturnActive) {
+                                                returnLabel = request.status === 'pending' ? 'Richiesta Inviata' :
+                                                              request.status === 'processing' ? 'In Lavorazione' :
+                                                              request.status === 'approved' ? 'Approvato' :
+                                                              request.status === 'rejected' ? 'Rifiutato' : 'Completato';
+                                              }
+
+                                              return (
+                                                <div className="flex gap-2">
+                                                  {review ? (
+                                                    <div className="flex items-center gap-1 px-3 py-2 bg-gray-50 text-gray-400 rounded-xl font-black uppercase text-[8px] tracking-widest cursor-default">
+                                                      <Star className="w-2.5 h-2.5 fill-gray-400" />
+                                                      Recensito
+                                                    </div>
+                                                  ) : (
+                                                    <button 
+                                                      onClick={() => {
+                                                        setSelectedReviewItem({ ...item, orderId: order.id });
+                                                        setReviewRating(5);
+                                                        setReviewComment('');
+                                                        setActiveUserView('review_form');
+                                                        setAuthStep('profile');
+                                                      }}
+                                                      className="px-3 py-2 bg-brand-blue/10 hover:bg-brand-blue hover:text-white text-brand-blue rounded-xl font-black uppercase text-[8px] tracking-widest transition-all active:scale-95 flex items-center gap-1 shrink-0"
+                                                    >
+                                                      <Star className="w-2.5 h-2.5" />
+                                                      Recensisci
+                                                    </button>
+                                                  )}
+
+                                                  {isReturnActive ? (
+                                                    <div className="flex items-center gap-1.5 px-3 py-2 bg-brand-yellow text-brand-dark rounded-xl font-black uppercase text-[8px] tracking-widest shadow-lg shadow-brand-yellow/10 border border-brand-yellow/50 scale-105 cursor-default">
+                                                      <CheckCircle2 className="w-2.5 h-2.5" />
+                                                      {returnLabel}
+                                                    </div>
+                                                  ) : (
+                                                    <button 
+                                                      disabled={isExpired}
+                                                      onClick={() => {
+                                                        setSelectedReturnOrder(order);
+                                                        setSelectedReturnItem(item);
+                                                        setActiveUserView('return_form');
+                                                        setAuthStep('profile');
+                                                      }}
+                                                      className={`px-3 py-2 rounded-xl font-black uppercase text-[8px] tracking-widest transition-all shrink-0 flex items-center gap-1 ${
+                                                        isExpired 
+                                                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed grayscale' 
+                                                          : 'bg-brand-yellow/20 text-brand-dark hover:bg-brand-yellow active:scale-95'
+                                                      }`}
+                                                      title={isExpired ? "Termine massimo superato" : "Richiedi il reso"}
+                                                    >
+                                                      <RefreshCw className="w-2.5 h-2.5" />
+                                                      {returnLabel}
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              );
+                                            })()}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  <div className="flex items-center justify-between pt-4 border-t border-gray-50">
+                                    <div className="text-left">
+                                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Totale Dispendio</p>
+                                      <p className="text-lg font-black text-brand-dark">€{order.total.toFixed(2)}</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      {order.status === 'shipped' && (
+                                        <button 
+                                          onClick={() => {
+                                            setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'delivered' } : o));
+                                            addToast("Consegna confermata con successo! Ora puoi recensire i prodotti.", "success");
+                                          }}
+                                          className="px-4 py-2 bg-brand-dark text-brand-yellow hover:bg-black rounded-xl font-black uppercase text-[10px] tracking-widest transition-all active:scale-95 flex items-center gap-2 shadow-lg shadow-brand-dark/20"
+                                        >
+                                          <CheckCircle2 className="w-4 h-4" />
+                                          Conferma Ricevimento
+                                        </button>
+                                      )}
+                                      <button className="px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all active:scale-95">
+                                        Dettagli
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="py-10 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col items-center justify-center">
+                              <Box className="w-12 h-12 text-gray-300 mb-3" />
+                              <p className="text-brand-dark font-black text-xl uppercase tracking-tighter">Nessun ordine</p>
+                              <p className="text-gray-400 text-sm font-bold px-6 mt-1">Non hai ancora effettuato ordini.<br/>Scopri le novità in vetrina!</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {activeUserView === 'favorites' && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300 text-left">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h3 className="text-2xl font-black text-brand-dark uppercase tracking-tighter italic">I Miei Preferiti</h3>
+                              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Prodotti che hai salvato</p>
+                            </div>
+                            <div className="flex bg-gray-100 p-1 rounded-[1.2rem] gap-1">
+                               <button 
+                                 onClick={() => setFavoritesViewMode('grid')}
+                                 className={`p-2.5 rounded-xl transition-all ${favoritesViewMode === 'grid' ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                               >
+                                 <LayoutGrid className="w-4 h-4" />
+                               </button>
+                               <button 
+                                 onClick={() => setFavoritesViewMode('carousel')}
+                                 className={`p-2.5 rounded-xl transition-all ${favoritesViewMode === 'carousel' ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                               >
+                                 <Grid className="w-4 h-4 rotate-45" />
+                               </button>
+                            </div>
                           </div>
-                          <button type="button" onClick={() => { setIsAuthOpen(false); }} className="w-full bg-brand-yellow hover:bg-brand-orange text-brand-dark p-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all shadow-lg active:scale-95">
-                            Inizia lo Shopping
-                          </button>
+                          
+                          {favorites.length > 0 ? (
+                             favoritesViewMode === 'grid' ? (
+                               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                                 {products.filter(p => favorites.includes(p.id)).map((p, idx) => (
+                                   <MiniProductCard 
+                                     key={p.id} 
+                                     product={p} 
+                                     onClick={() => { handleProductSelect(p); setIsAuthOpen(false); }}
+                                     onRemove={toggleFavorite}
+                                     index={idx}
+                                   />
+                                 ))}
+                               </div>
+                             ) : (
+                               <div className="relative overflow-hidden p-2 -m-2">
+                                 <div className="flex overflow-x-auto no-scrollbar gap-4 pb-4 snap-x snap-mandatory scroll-smooth">
+                                   {products.filter(p => favorites.includes(p.id)).map((p, idx) => (
+                                     <MiniProductCard 
+                                       key={p.id} 
+                                       product={p} 
+                                       onClick={() => { handleProductSelect(p); setIsAuthOpen(false); }}
+                                       onRemove={toggleFavorite}
+                                       index={idx}
+                                       isCarousel={true}
+                                     />
+                                   ))}
+                                 </div>
+                               </div>
+                             )
+                          ) : (
+                            <div className="py-20 bg-gray-50 rounded-[3rem] border border-dashed border-gray-200 flex flex-col items-center justify-center text-center px-10">
+                              <Heart className="w-16 h-16 text-gray-200 mb-6" />
+                              <h4 className="font-black text-brand-dark uppercase tracking-tighter text-xl">Nessun preferito</h4>
+                              <p className="text-gray-400 text-sm font-bold mt-2 max-w-[300px]">Inizia ad aggiungere i prodotti che ami cliccando sull'icona a cuore!</p>
+                              <button onClick={() => { setIsAuthOpen(false); }} className="mt-8 bg-brand-dark text-white px-8 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-brand-yellow hover:text-brand-dark transition-all shadow-xl active:scale-95">Esplora Catalogo</button>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -4839,7 +7899,7 @@ export default function App() {
                               <MessageCircle className="w-4 h-4 text-brand-blue" />
                               Messaggio Diretto Dalla Piattaforma
                             </h4>
-                            <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); alert('Messaggio inviato con successo! Ti risponderemo a breve.'); setAuthStep('profile'); }}>
+                            <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); addToast('Messaggio inviato con successo! Ti risponderemo a breve.', 'success'); setAuthStep('profile'); }}>
                               <textarea required className="w-full bg-white border-gray-200 border rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-blue outline-none resize-none h-32" placeholder="Scrivi qui la tua richiesta o problema e il nostro team ti risponderà nel più breve tempo possibile..."></textarea>
                               <button type="submit" className="w-full bg-brand-dark hover:bg-brand-blue text-white p-3.5 rounded-xl font-black uppercase text-xs tracking-widest transition-all shadow-lg active:scale-95">
                                 Invia Messaggio
@@ -4854,21 +7914,20 @@ export default function App() {
                     <div className="w-full md:w-80 space-y-4 order-1 md:order-2 md:border-l md:border-gray-100 md:pl-8">
                        <h3 className="hidden md:block text-xs font-black text-gray-300 uppercase tracking-widest ml-1 mb-2">Collegamenti Rapidi</h3>
                       <div className="grid grid-cols-2 md:grid-cols-2 gap-3">
-                        <button onClick={() => setAuthStep('edit_profile')} className={`p-4 bg-white border ${authStep === 'edit_profile' ? 'border-brand-yellow ring-2 ring-brand-yellow/20' : 'border-gray-100'} rounded-2xl flex flex-col items-center justify-center gap-2 hover:bg-brand-yellow/10 hover:border-brand-yellow transition-all group shadow-sm active:scale-95`}>
-                          <User className={`w-6 h-6 ${authStep === 'edit_profile' ? 'text-brand-dark' : 'text-brand-blue'} group-hover:text-brand-dark transition-colors`} />
-                          <span className="text-[10px] font-black uppercase tracking-widest text-brand-dark text-center leading-tight">Il mio<br/>profilo</span>
+                        <button 
+                          onClick={() => { setAuthStep('profile'); setActiveUserView('profile'); }}
+                          className={`p-4 bg-white border ${authStep === 'profile' && activeUserView === 'profile' ? 'border-brand-yellow ring-2 ring-brand-yellow/20' : 'border-gray-100'} rounded-2xl flex flex-col items-center justify-center gap-2 hover:bg-brand-yellow/10 hover:border-brand-yellow transition-all group shadow-sm active:scale-95`}
+                        >
+                          <LayoutDashboard className={`w-6 h-6 ${authStep === 'profile' && activeUserView === 'profile' ? 'text-brand-dark' : 'text-brand-blue'} group-hover:text-brand-dark transition-colors`} />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-brand-dark text-center leading-tight">Dashboard<br/>Account</span>
                         </button>
                         <button onClick={() => setAuthStep('orders')} className={`p-4 bg-white border ${authStep === 'orders' ? 'border-brand-yellow ring-2 ring-brand-yellow/20' : 'border-gray-100'} rounded-2xl flex flex-col items-center justify-center gap-2 hover:bg-brand-yellow/10 hover:border-brand-yellow transition-all group shadow-sm active:scale-95`}>
                           <Box className={`w-6 h-6 ${authStep === 'orders' ? 'text-brand-dark' : 'text-brand-blue'} group-hover:text-brand-dark transition-colors`} />
                           <span className="text-[10px] font-black uppercase tracking-widest text-brand-dark text-center leading-tight">I miei<br/>ordini</span>
                         </button>
-                        <button className="p-4 bg-white border border-gray-100 rounded-2xl flex flex-col items-center justify-center gap-2 hover:bg-brand-yellow/10 hover:border-brand-yellow transition-all group shadow-sm active:scale-95">
-                          <MapPin className="w-6 h-6 text-brand-blue group-hover:text-brand-dark transition-colors" />
-                          <span className="text-[10px] font-black uppercase tracking-widest text-brand-dark text-center leading-tight">I Miei<br/>Indirizzi</span>
-                        </button>
-                        <button className="p-4 bg-white border border-gray-100 rounded-2xl flex flex-col items-center justify-center gap-2 hover:bg-brand-yellow/10 hover:border-brand-yellow transition-all group shadow-sm active:scale-95">
-                          <Heart className="w-6 h-6 text-brand-blue group-hover:text-brand-dark transition-colors" />
-                          <span className="text-[10px] font-black uppercase tracking-widest text-brand-dark text-center leading-tight">I Miei<br/>Preferiti</span>
+                        <button onClick={() => setAuthStep('edit_profile')} className={`p-4 bg-white border ${authStep === 'edit_profile' ? 'border-brand-yellow ring-2 ring-brand-yellow/20' : 'border-gray-100'} rounded-2xl flex flex-col items-center justify-center gap-2 hover:bg-brand-yellow/10 hover:border-brand-yellow transition-all group shadow-sm active:scale-95`}>
+                          <User className={`w-6 h-6 ${authStep === 'edit_profile' ? 'text-brand-dark' : 'text-brand-blue'} group-hover:text-brand-dark transition-colors`} />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-brand-dark text-center leading-tight">Dati e<br/>Profilo</span>
                         </button>
                         <button 
                           onClick={() => {
@@ -4880,6 +7939,13 @@ export default function App() {
                         >
                           <RefreshCw className={`w-6 h-6 ${activeUserView === 'returns' ? 'text-brand-dark' : 'text-brand-blue'} group-hover:text-brand-dark transition-colors`} />
                           <span className="text-[10px] font-black uppercase tracking-widest text-brand-dark text-center leading-tight">Resi e<br/>Rimborsi</span>
+                        </button>
+                        <button 
+                          onClick={() => { setAuthStep('profile'); setActiveUserView('favorites'); }}
+                          className={`p-4 bg-white border ${activeUserView === 'favorites' ? 'border-brand-yellow ring-2 ring-brand-yellow/20' : 'border-gray-100'} rounded-2xl flex flex-col items-center justify-center gap-2 hover:bg-brand-yellow/10 hover:border-brand-yellow transition-all group shadow-sm active:scale-95`}
+                        >
+                          <Heart className={`w-6 h-6 ${activeUserView === 'favorites' ? 'text-brand-dark' : 'text-brand-blue'} group-hover:text-brand-dark transition-colors`} />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-brand-dark text-center leading-tight">I Miei<br/>Preferiti</span>
                         </button>
                         <button onClick={() => setAuthStep('support')} className={`p-4 bg-white border ${authStep === 'support' ? 'border-brand-yellow ring-2 ring-brand-yellow/20' : 'border-gray-100'} rounded-2xl flex flex-col items-center justify-center gap-2 hover:bg-brand-yellow/10 hover:border-brand-yellow transition-all group shadow-sm active:scale-95`}>
                           <MessageCircle className={`w-6 h-6 ${authStep === 'support' ? 'text-brand-dark' : 'text-brand-blue'} group-hover:text-brand-dark transition-colors`} />
@@ -5014,6 +8080,52 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+      <ToastContainer toasts={toasts} onClose={(id) => setToasts(prev => prev.filter(t => t.id !== id))} />
+      <AnimatePresence>
+        {adminConfirmAction && adminConfirmAction.active && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-brand-dark/40 backdrop-blur-sm"
+              onClick={() => setAdminConfirmAction(null)}
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-white w-full max-w-md rounded-[2.5rem] p-10 overflow-hidden text-center"
+            >
+              <div className={`absolute top-0 inset-x-0 h-2 ${adminConfirmAction.color.includes('bg-red') ? 'bg-red-500' : 'bg-brand-yellow'}`}></div>
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gray-50 mb-6">
+                <AlertTriangle className={`w-10 h-10 ${adminConfirmAction.color.includes('bg-red') ? 'text-red-500' : 'text-brand-yellow'}`} />
+              </div>
+              <h3 className="text-2xl font-black text-brand-dark uppercase tracking-tighter mb-4">{adminConfirmAction.title}</h3>
+              <p className="text-sm font-bold text-gray-500 leading-relaxed mb-10">{adminConfirmAction.message}</p>
+              <div className="grid grid-cols-2 gap-4">
+                <button 
+                  onClick={() => setAdminConfirmAction(null)}
+                  className="py-4 bg-gray-100 text-gray-500 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-gray-200 transition-all"
+                >
+                  Annulla
+                </button>
+                <button 
+                  onClick={() => {
+                    adminConfirmAction.onConfirm();
+                    setAdminConfirmAction(null);
+                  }}
+                  className={`py-4 ${adminConfirmAction.color} text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:brightness-110 active:scale-95 transition-all shadow-lg active:shadow-none`}
+                >
+                  Conferma
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
+
+

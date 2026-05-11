@@ -15,23 +15,28 @@
  * The useRouter / usePathname hooks from next/navigation are injected below.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useApp } from '@/context/AppProvider';
 import { slugify, CATEGORIES } from '@/lib/data';
+import { motion, AnimatePresence } from 'motion/react';
 
 // ─── Lazy-import the original heavy App component ────────────────────────────
 // We re-export the original Vite App.tsx render body here, keeping the
 // visual implementation identical. Rather than duplicating 8k lines,
 // we import the BespointApp barrel which re-exports the render.
+import { Header } from '@/components/storefront/Header';
+import { Footer } from '@/components/storefront/Footer';
+import { ModularStorefront } from '@/components/storefront/ModularStorefront';
 import { BespointApp } from '@/components/storefront/BespointApp';
 
 interface Props {
   initialCategory?: string;
   initialProductId?: string;
+  children?: React.ReactNode;
 }
 
-export function StorefrontShell({ initialCategory, initialProductId }: Props) {
+export function StorefrontShell({ children }: { children?: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const {
@@ -42,62 +47,68 @@ export function StorefrontShell({ initialCategory, initialProductId }: Props) {
     selectedCategory,
     selectedProduct,
     pageSettings,
+    isAdminOpen,
+    isCartOpen,
+    isCheckoutOpen,
+    isAuthOpen,
+    handleCategorySelect,
   } = useApp();
 
-  // ── Sync initial state from URL on first render ────────────────────────────
+  // ── Sync state with URL automatically ──────────────────────────────────────
   useEffect(() => {
-    if (initialProductId) {
-      const product = products.find((p) => p.id === initialProductId);
+    const parts = pathname.split('/').filter(Boolean);
+    
+    if (parts[0] === 'prodotto' && parts[1]) {
+      const productId = parts[1];
+      const product = products.find((p) => p.id === productId);
       if (product) {
         setSelectedProduct(product);
-        // Assicuriamoci che la categoria sia corretta per il prodotto
-        if (product.category !== selectedCategory) {
-          setSelectedCategory(product.category);
+      }
+    } else {
+      // If we are NOT on a product page, always clear selectedProduct
+      if (selectedProduct) setSelectedProduct(null);
+      
+      if (parts[0] === 'categoria' && parts[1]) {
+        const catSlug = parts[1];
+        const realCategory = CATEGORIES.find((c) => slugify(c).toLowerCase() === catSlug.toLowerCase());
+        
+        if (realCategory && realCategory !== selectedCategory) {
+          setSelectedCategory(realCategory);
+          const subcats = pageSettings.subcategories[realCategory] || [];
+          setSelectedSubcategory(subcats.length > 0 ? subcats[0] : 'Tutti');
+        }
+      } else if (pathname === '/') {
+        if (selectedCategory !== 'Tutti') {
+          setSelectedCategory('Tutti');
         }
       }
-    } else if (initialCategory) {
-      // Correzione Case-Insensitive: cerchiamo la categoria corretta nei dati
-      const realCategory = CATEGORIES.find(
-        (c) => slugify(c).toLowerCase() === initialCategory.toLowerCase() || 
-               c.toLowerCase() === initialCategory.toLowerCase()
-      );
+    }
+  }, [pathname, products, pageSettings.subcategories]);
+
+  const isProductPage = pathname.startsWith('/prodotto');
+
+  const wasAdminOpen = useRef(isAdminOpen);
+  useEffect(() => {
+    if (wasAdminOpen.current && !isAdminOpen) {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }
+    wasAdminOpen.current = isAdminOpen;
+  }, [isAdminOpen]);
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col relative">
+      {/* Browsing Layer (Header is shared) */}
+      <Header onCategorySelect={handleCategorySelect} />
       
-      if (realCategory && realCategory !== selectedCategory) {
-        setSelectedCategory(realCategory);
-        const subcats = pageSettings.subcategories[realCategory] || [];
-        setSelectedSubcategory(subcats.length > 0 ? subcats[0] : 'Tutti');
-      }
-    } else {
-      if (selectedCategory !== 'Tutti') setSelectedCategory('Tutti');
-      if (selectedProduct) setSelectedProduct(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialCategory, initialProductId]);
+      <main className="flex-grow">
+        <ModularStorefront />
+        {isProductPage && children}
+      </main>
+      
+      <Footer />
 
-  // ── Navigation helpers injected into BespointApp ──────────────────────────
-  const handleCategorySelect = (cat: string) => {
-    if (cat === 'Tutti') {
-      router.push('/');
-      setSelectedSubcategory('Tutti');
-    } else {
-      router.push(`/categoria/${encodeURIComponent(slugify(cat))}`);
-      const subcats = pageSettings.subcategories[cat] || [];
-      setSelectedSubcategory(subcats.length > 0 ? subcats[0] : 'Tutti');
-    }
-  };
-
-  const handleProductSelect = (p: any | null) => {
-    if (p) {
-      router.push(`/prodotto/${p.id}/${slugify(p.name)}`);
-    } else {
-      setSelectedProduct(null);
-      if (selectedCategory && selectedCategory !== 'Tutti') {
-        router.push(`/categoria/${encodeURIComponent(slugify(selectedCategory))}`);
-      } else {
-        router.push('/');
-      }
-    }
-  };
-
-  return <BespointApp />;
+      {/* Headless Layer (Legacy Modals & Admin) */}
+      <BespointApp />
+    </div>
+  );
 }

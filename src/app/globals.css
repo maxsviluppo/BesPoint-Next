@@ -26,6 +26,19 @@
   }
 }
 
+/* Hide scrollbar on mobile */
+@media (max-width: 768px) {
+  html, body {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  
+  html::-webkit-scrollbar, 
+  body::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 /* Custom scrollbar for horizontal categories */
 .no-scrollbar::-webkit-scrollbar {
   display: none;

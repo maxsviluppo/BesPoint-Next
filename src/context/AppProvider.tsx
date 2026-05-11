@@ -7,10 +7,12 @@ import React, {
   useEffect,
   useCallback,
   useMemo,
+  useRef,
   ReactNode,
 } from 'react';
+import { useRouter } from 'next/navigation';
 import { Product, CartItem, Review, Order, CompanySettings } from '@/lib/types';
-import { PRODUCTS, DEFAULT_COMPANY_SETTINGS, DEFAULT_PAGE_SETTINGS } from '@/lib/data';
+import { PRODUCTS, DEFAULT_COMPANY_SETTINGS, DEFAULT_PAGE_SETTINGS, slugify } from '@/lib/data';
 
 // ─── Helper: read/write localStorage safely ───────────────────────────────────
 function getLS<T>(key: string, fallback: T): T {
@@ -78,9 +80,11 @@ interface AppContextValue {
   // Auth
   currentUser: any;
   setCurrentUser: React.Dispatch<React.SetStateAction<any>>;
-  authStep: string;
+  authStep: 'email' | 'login' | 'register' | 'profile' | 'edit_profile' | 'orders' | 'support' | 'returns';
   setAuthStep: React.Dispatch<React.SetStateAction<any>>;
   logout: () => void;
+  isAuthOpen: boolean;
+  setIsAuthOpen: React.Dispatch<React.SetStateAction<boolean>>;
 
   // Orders
   orders: Order[];
@@ -107,8 +111,19 @@ interface AppContextValue {
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   dismissToast: (id: string) => void;
 
+  // UI
+  isCartOpen: boolean;
+  setIsCartOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  isCheckoutOpen: boolean;
+  setIsCheckoutOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  isAdminOpen: boolean;
+  setIsAdminOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  isSideMenuOpen: boolean;
+  setIsSideMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  
   // Cart trigger (for animation)
   cartTrigger: number;
+  setCart: React.Dispatch<React.SetStateAction<CartItem[]>>;
 
   // Admin
   adminActiveTab: string;
@@ -116,6 +131,18 @@ interface AppContextValue {
 
   // isDesktop
   isDesktop: boolean;
+
+  // Navigation (injected)
+  handleProductSelect: (p: any | null) => void;
+  handleCategorySelect: (cat: string) => void;
+
+  // Filters
+  sortBy: string;
+  setSortBy: React.Dispatch<React.SetStateAction<string>>;
+  selectedBrand: string;
+  setSelectedBrand: React.Dispatch<React.SetStateAction<string>>;
+  isGlobalFiltersExpanded: boolean;
+  setIsGlobalFiltersExpanded: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -142,6 +169,8 @@ const DEFAULT_PAYMENT_SETTINGS = {
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 export function AppProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
+  
   // — products —
   const [products, setProducts] = useState<Product[]>(() =>
     getLS('bespoint_products', PRODUCTS)
@@ -186,9 +215,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [adminActiveTab, setAdminActiveTab] = useState<any>('dashboard');
 
   // — isDesktop —
-  const [isDesktop, setIsDesktop] = useState(
-    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
-  );
+  const [isDesktop, setIsDesktop] = useState(true);
   useEffect(() => {
     const handler = () => setIsDesktop(window.innerWidth >= 1024);
     window.addEventListener('resize', handler);
@@ -199,12 +226,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [selectedCategory, setSelectedCategory] = useState('Tutti');
   const [selectedSubcategory, setSelectedSubcategory] = useState('Tutti');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('newest');
+  const [selectedBrand, setSelectedBrand] = useState('Tutti');
+  const [isGlobalFiltersExpanded, setIsGlobalFiltersExpanded] = useState(false);
 
   const filteredProducts = useMemo(() => {
     let arr = [...products];
     if (selectedCategory !== 'Tutti') arr = arr.filter((p) => p.category === selectedCategory);
     if (selectedSubcategory && selectedSubcategory !== 'Tutti')
       arr = arr.filter((p) => p.subcategory === selectedSubcategory);
+    if (selectedBrand !== 'Tutti') arr = arr.filter((p) => p.brand === selectedBrand);
+    
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       arr = arr.filter(
@@ -215,14 +247,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
           p.category.toLowerCase().includes(q)
       );
     }
-    return arr;
-  }, [products, selectedCategory, selectedSubcategory, searchQuery]);
+
+    // Sort
+    return arr.sort((a, b) => {
+      if (sortBy === 'newest') return 0; // Default order
+      if (sortBy === 'price-asc') return a.price - b.price;
+      if (sortBy === 'price-desc') return b.price - a.price;
+      if (sortBy === 'rating') return (b.rating || 0) - (a.rating || 0);
+      return 0;
+    });
+  }, [products, selectedCategory, selectedSubcategory, searchQuery, sortBy, selectedBrand]);
 
   // — favorites —
   const [favorites, setFavorites] = useState<string[]>(() =>
     getLS('bespoint_favorites', [])
   );
   useEffect(() => setLS('bespoint_favorites', favorites), [favorites]);
+
+  // --- Scroll Management ---
+  const lastScrollPos = useRef(0);
+  useEffect(() => {
+    if (selectedProduct) {
+      // Save current scroll before opening product
+      lastScrollPos.current = window.scrollY;
+    } else {
+      // Restore scroll when returning to catalog
+      // We use a small timeout to ensure React has rendered the grid
+      if (lastScrollPos.current > 0) {
+        setTimeout(() => {
+          window.scrollTo({ top: lastScrollPos.current, behavior: 'auto' });
+          lastScrollPos.current = 0; // Reset after restoration
+        }, 0);
+      }
+    }
+  }, [selectedProduct]);
 
   const toggleFavorite = useCallback((id: string) => {
     setFavorites((prev) =>
@@ -274,9 +332,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
   useEffect(() => setLS('companySettings', companySettings), [companySettings]);
 
-  const [pageSettings, setPageSettings] = useState(() =>
-    getLS('pageSettings', DEFAULT_PAGE_SETTINGS)
-  );
+  const [pageSettings, setPageSettings] = useState(() => {
+    const saved = getLS('pageSettings', DEFAULT_PAGE_SETTINGS);
+    // Auto-repair: if homeSlides is empty or settings are missing, merge with defaults
+    if (!saved.homeSlides || saved.homeSlides.length === 0 || typeof saved.isHeroEnabled === 'undefined') {
+      return { ...DEFAULT_PAGE_SETTINGS, ...saved, homeSlides: DEFAULT_PAGE_SETTINGS.homeSlides, isHeroEnabled: true };
+    }
+    return saved;
+  });
   useEffect(() => setLS('pageSettings', pageSettings), [pageSettings]);
 
   const [paymentSettings, setPaymentSettings] = useState(() =>
@@ -297,9 +360,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const handleProductSelect = useCallback((p: any | null) => {
+    if (p) {
+      router.push(`/prodotto/${p.id}/${slugify(p.name)}`);
+    } else {
+      if (selectedCategory && selectedCategory !== 'Tutti') {
+        router.push(`/categoria/${encodeURIComponent(slugify(selectedCategory))}`);
+      } else {
+        router.push('/');
+      }
+    }
+  }, [router, selectedCategory]);
+
+  const handleCategorySelect = useCallback((cat: string) => {
+    if (cat === 'Tutti') {
+      router.push('/');
+    } else {
+      router.push(`/categoria/${encodeURIComponent(slugify(cat))}`);
+    }
+  }, [router]);
+
   const value: AppContextValue = {
     products, setProducts,
-    cart, addToCart, removeFromCart, updateQuantity, cartCount, cartTotal,
+    cart, setCart, addToCart, removeFromCart, updateQuantity, cartCount, cartTotal,
     isCartOpen, setIsCartOpen,
     isCheckoutOpen, setIsCheckoutOpen,
     isAdminOpen, setIsAdminOpen,
@@ -322,6 +405,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     cartTrigger,
     adminActiveTab, setAdminActiveTab,
     isDesktop,
+    handleProductSelect,
+    handleCategorySelect,
+    sortBy, setSortBy,
+    selectedBrand, setSelectedBrand,
+    isGlobalFiltersExpanded, setIsGlobalFiltersExpanded
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

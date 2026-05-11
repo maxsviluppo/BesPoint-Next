@@ -15,7 +15,11 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react"],
   },
-  turbopack: {},
+  turbopack: {
+    resolveAlias: {
+      "react-router-dom": "./src/lib/router-shim.tsx",
+    },
+  },
 
   typescript: {
     // !! WARN !!
