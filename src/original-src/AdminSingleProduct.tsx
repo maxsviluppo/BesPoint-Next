@@ -470,10 +470,12 @@ export const AdminSingleProduct = ({ onBack, onSave, onDelete, initialData, exis
     amazonStock: number,
     ebayStock: number,
     ean: string,
+    showEan?: boolean,
     image: string
   }[]>(Array.isArray(initialData?.variants) ? initialData.variants.map((v: any) => ({
     ...v,
     ean: v.ean || "",
+    showEan: v.showEan ?? true,
     image: v.image || "",
     webStock: v.webStock ?? (Number(v.totalStock || 0) - Number(v.allocations?.amazon || 0) - Number(v.allocations?.ebay || 0)),
     amazonStock: v.amazonStock ?? Number(v.allocations?.amazon || 0),
@@ -672,10 +674,75 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
         <div className="lg:col-span-8 space-y-8">
           
           <div className="space-y-6">
+            {/* Assegnazione Categoria & Sottocategoria */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 mb-6">
+              <label className="block">
+                <span className="text-[10px] font-black uppercase tracking-widest text-brand-blue mb-1.5 block">Categoria *</span>
+                {isAddingNewCategory ? (
+                  <div className="flex gap-1">
+                    <input 
+                      type="text" 
+                      value={newCategory}
+                      onChange={e => setNewCategory(e.target.value)}
+                      placeholder="Nuova Categoria..." 
+                      className="w-full bg-yellow-50 border-brand-yellow rounded-xl px-4 py-2.5 text-xs font-bold" 
+                    />
+                    <button onClick={() => setIsAddingNewCategory(false)} className="px-2 text-red-500 hover:text-red-700 font-bold text-lg">×</button>
+                  </div>
+                ) : (
+                  <select 
+                    value={category}
+                    onChange={e => {
+                      if (e.target.value === "ADD_NEW") {
+                        setIsAddingNewCategory(true);
+                      } else {
+                        setCategory(e.target.value);
+                      }
+                    }}
+                    className="w-full bg-white border-gray-200 rounded-xl px-4 py-2.5 text-xs font-bold focus:ring-brand-blue focus:border-brand-blue"
+                  >
+                    {existingCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                    <option value="ADD_NEW" className="text-brand-blue font-black">+ NUOVA CATEGORIA</option>
+                  </select>
+                )}
+              </label>
+              <label className="block">
+                <span className="text-[10px] font-black uppercase tracking-widest text-brand-blue mb-1.5 block">Sottocategoria *</span>
+                {isAddingNewSubcategory ? (
+                  <div className="flex gap-1">
+                    <input 
+                      type="text" 
+                      value={newSubcategory}
+                      onChange={e => setNewSubcategory(e.target.value)}
+                      placeholder="Nuova Sotto..." 
+                      className="w-full bg-yellow-50 border-brand-yellow rounded-xl px-4 py-2.5 text-xs font-bold" 
+                    />
+                    <button onClick={() => setIsAddingNewSubcategory(false)} className="px-2 text-red-500 hover:text-red-700 font-bold text-lg">×</button>
+                  </div>
+                ) : (
+                  <select 
+                    value={subcategory}
+                    onChange={e => {
+                      if (e.target.value === "ADD_NEW") {
+                        setIsAddingNewSubcategory(true);
+                      } else {
+                        setSubcategory(e.target.value);
+                      }
+                    }}
+                    className="w-full bg-white border-gray-200 rounded-xl px-4 py-2.5 text-xs font-bold focus:ring-brand-blue focus:border-brand-blue"
+                  >
+                    <option value="Tutti">Tutte</option>
+                    {(existingSubcategories[category] || []).map(s => <option key={s} value={s}>{s}</option>)}
+                    <option value="ADD_NEW" className="text-brand-blue font-black">+ NUOVA SOTTOCATEGORIA</option>
+                  </select>
+                )}
+              </label>
+            </div>
+
             <div className="flex justify-between items-end mb-1">
               <span className="text-[10px] font-black uppercase tracking-widest text-brand-blue block">Titolo Prodotto (DB Interno & Sito) *</span>
-              <span className={`text-[9px] font-black px-2 py-0.5 rounded-md transition-all ${title.length > 60 ? 'bg-red-500 text-white shadow-lg animate-pulse' : 'bg-gray-100 text-gray-400'}`}>
-                {title.length} / 60
+              <span className={`text-[9px] font-black px-2 py-0.5 rounded-md transition-all ${title.length > 90 ? 'bg-red-500 text-white shadow-lg animate-pulse' : 'bg-gray-100 text-gray-400'}`}>
+                {title.length} / 90
               </span>
             </div>
             <div className="relative">
@@ -684,12 +751,12 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                 value={title}
                 onChange={e => setTitle(toProperCase(e.target.value))}
                 placeholder="Titolo gestionale per sito web..." 
-                className={`w-full bg-gray-50 border-gray-200 rounded-xl px-4 py-3 text-sm font-bold transition-all ${title.length > 60 ? 'border-red-500 ring-4 ring-red-500/10' : 'focus:ring-brand-blue focus:border-brand-blue'}`} 
+                className={`w-full bg-gray-50 border-gray-200 rounded-xl px-4 py-3 text-sm font-bold transition-all ${title.length > 90 ? 'border-red-500 ring-4 ring-red-500/10' : 'focus:ring-brand-blue focus:border-brand-blue'}`} 
               />
-              {title.length > 60 && (
+              {title.length > 90 && (
                 <div className="mt-2 text-[11px] leading-relaxed p-3 bg-red-50 border border-red-100 rounded-xl text-gray-600 font-medium">
                   <span className="text-red-500 font-black uppercase text-[9px] block mb-1">Limite Superato!</span>
-                  {title.substring(0, 60)}<span className="text-red-500 bg-red-100 px-0.5 rounded font-black">{title.substring(60)}</span>
+                  {title.substring(0, 90)}<span className="text-red-500 bg-red-100 px-0.5 rounded font-black">{title.substring(90)}</span>
                 </div>
               )}
             </div>
@@ -787,7 +854,7 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                    </div>
                    <div className="bg-black/20 rounded-xl px-4 py-2 flex justify-between items-center">
                      <span className="text-[9px] font-black uppercase text-gray-500">Prezzo Netto</span>
-                     <span className="text-sm font-black text-gray-400">€{baseCost.toFixed(2)}</span>
+                     <span className="text-sm font-black text-gray-400">€{(Number(baseCost) || 0).toFixed(2)}</span>
                    </div>
                    <div className="bg-black/20 rounded-xl px-4 py-2 flex justify-between items-center opacity-0 pointer-events-none">
                      <span className="text-[9px]">&nbsp;</span>
@@ -832,8 +899,8 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                     })()}
                    <div className="bg-black/20 rounded-xl px-4 py-2 flex justify-between items-center">
                      <span className="text-[9px] font-black uppercase text-gray-500">Margine Lordo</span>
-                     <span className={`text-sm font-black ${ (parseFloat(manualB2c || '0') - baseCost) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                       €{(parseFloat(manualB2c || '0') - baseCost).toFixed(2)}
+                     <span className={`text-sm font-black ${ (parseFloat(manualB2c || '0') - (Number(baseCost) || 0)) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                       €{(parseFloat(manualB2c || '0') - (Number(baseCost) || 0)).toFixed(2)}
                      </span>
                    </div>
                  </div>
@@ -873,8 +940,8 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                    </div>
                    <div className="bg-black/20 rounded-xl px-4 py-2 flex justify-between items-center">
                      <span className="text-[9px] font-black uppercase text-gray-500">Margine B2B</span>
-                     <span className={`text-sm font-black ${ (parseFloat(manualB2c || '0') * (1 - b2bDiscount/100) - baseCost) >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
-                       €{(parseFloat(manualB2c || '0') * (1 - b2bDiscount / 100) - baseCost).toFixed(2)}
+                     <span className={`text-sm font-black ${ (parseFloat(manualB2c || '0') * (1 - b2bDiscount/100) - (Number(baseCost) || 0)) >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
+                       €{(parseFloat(manualB2c || '0') * (1 - b2bDiscount / 100) - (Number(baseCost) || 0)).toFixed(2)}
                      </span>
                    </div>
                  </div>
@@ -1079,7 +1146,7 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
           </div>
             
           <div className="space-y-6 pt-4">
-              <span className="text-[10px] font-black uppercase tracking-widest text-brand-blue block">Specifiche Tecniche & Dimensioni</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-brand-blue block">Peso e dimensioni dell'imballo</span>
               
               {/* Parametri Fissi */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-5 bg-gray-50 rounded-2xl border border-gray-100 shadow-inner">
@@ -1372,7 +1439,23 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                                />
                              </div>
                              <div className="flex flex-col gap-1">
-                               <span className="text-[9px] font-black uppercase text-gray-400 tracking-widest pl-1">EAN Variante</span>
+                                <div className="flex justify-between items-center pl-1 w-full">
+                                  <span className="text-[9px] font-black uppercase text-gray-400 tracking-widest">EAN Variante</span>
+                                  <label className="inline-flex items-center cursor-pointer scale-75 origin-right">
+                                    <input 
+                                      type="checkbox" 
+                                      className="sr-only peer" 
+                                      checked={v.showEan !== false} 
+                                      onChange={e => { 
+                                        const newV = [...variants]; 
+                                        newV[i].showEan = e.target.checked; 
+                                        setVariants(newV); 
+                                      }} 
+                                    />
+                                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-blue relative"></div>
+                                    <span className="ml-2 text-[8px] font-black uppercase text-gray-400 peer-checked:text-brand-blue">Visibile</span>
+                                  </label>
+                                </div>
                                <input 
                                  type="text" value={v.ean}
                                  onChange={e => { const newV = [...variants]; newV[i].ean = e.target.value; setVariants(newV); }}
@@ -1396,8 +1479,16 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                                  <option value="percent">% Su Pubblico</option>
                                </select>
                                <input 
-                                 type="number" step="0.01" value={v.costValue}
-                                 onChange={e => { const newV = [...variants]; newV[i].costValue = Number(e.target.value); setVariants(newV); }}
+                                 type="number" 
+                                 step="0.01" 
+                                 value={v.costValue === 0 ? "" : v.costValue}
+                                 placeholder="0.00"
+                                 onChange={e => { 
+                                   const val = e.target.value === "" ? 0 : Number(e.target.value);
+                                   const newV = [...variants]; 
+                                   newV[i].costValue = val; 
+                                   setVariants(newV); 
+                                 }}
                                  className="w-28 bg-white rounded-lg px-3 py-2.5 text-[12px] font-black text-center border border-gray-200 outline-none focus:ring-2 focus:ring-brand-blue/30 shadow-sm"
                                />
                              </div>
@@ -1525,80 +1616,20 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                </div>
             </div>
           </div>
+            {/* Livello 3 e 4 opzionali rimangono in fondo */}
             <div className="space-y-4">
-            <h3 className="text-lg font-black uppercase tracking-widest text-brand-dark border-b border-gray-100 pb-3 flex items-center gap-2"><Layers className="w-5 h-5 text-gray-400"/> Tassonomia Avanzata</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <label className="block">
-                <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Livello 1 (Categoria)</span>
-                {isAddingNewCategory ? (
-                   <div className="flex gap-1">
-                     <input 
-                        type="text" 
-                        value={newCategory}
-                        onChange={e => setNewCategory(e.target.value)}
-                        placeholder="Nuova Categoria..." 
-                        className="w-full bg-yellow-50 border-brand-yellow rounded-xl px-3 py-2 text-xs font-bold" 
-                     />
-                     <button onClick={() => setIsAddingNewCategory(false)} className="px-1 text-red-400 hover:text-red-500 rounded-lg">×</button>
-                   </div>
-                 ) : (
-                  <select 
-                    value={category}
-                    onChange={e => {
-                      if (e.target.value === "ADD_NEW") {
-                        setIsAddingNewCategory(true);
-                      } else {
-                        setCategory(e.target.value);
-                      }
-                    }}
-                    className="w-full bg-gray-50 border-gray-200 rounded-xl px-3 py-2 text-xs font-bold focus:ring-brand-blue focus:border-brand-blue"
-                  >
-                    {existingCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                    <option value="ADD_NEW" className="text-brand-blue font-black">+ NUOVA</option>
-                  </select>
-                )}
-              </label>
-              <label className="block">
-                <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Livello 2 (Sottocategoria)</span>
-                {isAddingNewSubcategory ? (
-                   <div className="flex gap-1">
-                     <input 
-                        type="text" 
-                        value={newSubcategory}
-                        onChange={e => setNewSubcategory(e.target.value)}
-                        placeholder="Nuova Sotto..." 
-                        className="w-full bg-yellow-50 border-brand-yellow rounded-xl px-3 py-2 text-xs font-bold" 
-                     />
-                     <button onClick={() => setIsAddingNewSubcategory(false)} className="px-1 text-red-400 hover:text-red-500 rounded-lg">×</button>
-                   </div>
-                 ) : (
-                  <select 
-                    value={subcategory}
-                    onChange={e => {
-                      if (e.target.value === "ADD_NEW") {
-                        setIsAddingNewSubcategory(true);
-                      } else {
-                        setSubcategory(e.target.value);
-                      }
-                    }}
-                    className="w-full bg-gray-50 border-gray-200 rounded-xl px-3 py-2 text-xs font-bold focus:ring-brand-blue focus:border-brand-blue"
-                  >
-                    <option value="Tutti">Tutte</option>
-                    {(existingSubcategories[category] || []).map(s => <option key={s} value={s}>{s}</option>)}
-                    <option value="ADD_NEW" className="text-brand-blue font-black">+ NUOVA</option>
-                  </select>
-                )}
-              </label>
-              <label className="block">
-                <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Livello 3 (Optional)</span>
-                <input type="text" placeholder="es. Led Integrato" className="w-full bg-white border-gray-200 rounded-xl px-3 py-1.5 text-xs font-bold placeholder:text-gray-300" />
-              </label>
-              <label className="block">
-                 <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Livello 4 (Deep)</span>
-                 <input type="text" placeholder="N/A" className="w-full bg-white border-gray-200 rounded-xl px-3 py-1.5 text-xs font-bold placeholder:text-gray-300" />
-              </label>
+              <h3 className="text-lg font-black uppercase tracking-widest text-brand-dark border-b border-gray-100 pb-3 flex items-center gap-2"><Layers className="w-5 h-5 text-gray-400"/> Tassonomia Avanzata Opzionale</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="block">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Livello 3 (Optional)</span>
+                  <input type="text" placeholder="es. Led Integrato" className="w-full bg-white border-gray-200 rounded-xl px-3 py-1.5 text-xs font-bold placeholder:text-gray-300" />
+                </label>
+                <label className="block">
+                   <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Livello 4 (Deep)</span>
+                   <input type="text" placeholder="N/A" className="w-full bg-white border-gray-200 rounded-xl px-3 py-1.5 text-xs font-bold placeholder:text-gray-300" />
+                </label>
+              </div>
             </div>
-          </div>
 
           {/* DOCUMENTAZIONE PRODOTTO */}
           <div className="space-y-6 pt-4">
@@ -1769,7 +1800,7 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                   </label>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">Costo riferimento:</span>
-                    <span className="text-[9px] font-black text-brand-dark">€{baseCost.toFixed(2)}</span>
+                    <span className="text-[9px] font-black text-brand-dark">€{(Number(baseCost) || 0).toFixed(2)}</span>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <label className="block">
@@ -1836,7 +1867,7 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                   </label>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">Costo riferimento:</span>
-                    <span className="text-[9px] font-black text-brand-dark">€{baseCost.toFixed(2)}</span>
+                    <span className="text-[9px] font-black text-brand-dark">€{(Number(baseCost) || 0).toFixed(2)}</span>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <label className="block">

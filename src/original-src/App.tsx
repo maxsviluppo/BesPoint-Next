@@ -655,12 +655,7 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop, reviews = [], 
                   )}
                 </div>
                 <h2 className="text-2xl lg:text-3xl font-black text-brand-dark leading-tight">{product.name}</h2>
-                {product.weight && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <Package className="w-4 h-4 text-gray-400" />
-                    <span className="text-xs font-bold text-gray-500">Peso: {product.weight} Kg</span>
-                  </div>
-                )}
+                {/* Peso nascosto lato utente */}
               </div>
 
               {/* Description */}
@@ -678,7 +673,8 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop, reviews = [], 
               <div className="space-y-6">
                 <h4 className="font-black text-sm uppercase tracking-widest text-brand-dark border-l-4 border-brand-yellow pl-3">Caratteristiche</h4>
                 <div className="grid grid-cols-2 gap-3">
-                  {product.showEan && (selectedVariantObject?.ean || product.ean) && (
+                  {((selectedVariantObject && selectedVariantObject.showEan !== false && selectedVariantObject.ean) || 
+                    (!selectedVariantObject && product.showEan && product.ean)) && (
                     <div className="bg-brand-blue text-white p-3 rounded-2xl border border-brand-blue shadow-lg shadow-brand-blue/10">
                       <p className="text-[9px] text-white/60 uppercase font-black mb-0.5">Codice EAN</p>
                       <p className="text-xs font-black tracking-widest">{selectedVariantObject?.ean || product.ean}</p>
@@ -2361,6 +2357,7 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
   const [selectedReturnId, setSelectedReturnId] = useState<string | null>(null);
   const [adminProductView, setAdminProductView] = useState<'list' | 'single' | 'mass'>('list');
   const [editingAdminProduct, setEditingAdminProduct] = useState<Product | null>(null);
+  const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({});
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [adminTopIdx, setAdminTopIdx] = useState(0);
   const [adminMidIdx, setAdminMidIdx] = useState(0);
@@ -2371,6 +2368,10 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
   const [addingSubcategoryTo, setAddingSubcategoryTo] = useState<string | null>(null);
   const [newSubcategoryName, setNewSubcategoryName] = useState("");
   const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
+  const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [editCategoryValue, setEditCategoryValue] = useState("");
+  const [editingSubcategory, setEditingSubcategory] = useState<{ category: string; subcategory: string } | null>(null);
+  const [editSubcategoryValue, setEditSubcategoryValue] = useState("");
   const [aiSuggestions, setAiSuggestions] = useState<{ categories: string[], subcategories: Record<string, string[]> } | null>(null);
 
   const adminUniqueBrands = useMemo(() => Array.from(new Set(products.map(p => p.brand).filter(Boolean))).sort() as string[], [products]);
@@ -5278,7 +5279,7 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                             <div className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors">
                               <div className="flex items-center gap-3">
                                 {/* Order Buttons */}
-                                <div className="flex flex-col gap-1 mr-2 invisible group-hover:visible">
+                                <div className="flex flex-col gap-1 mr-2">
                                   <button 
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -5313,7 +5314,54 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                   <Grid className="w-4 h-4" />
                                 </div>
                                 <div className="flex flex-col">
-                                  <h3 className="text-sm font-black text-brand-dark uppercase tracking-tight">{cat}</h3>
+                                  {editingCategory === cat ? (
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                      <input
+                                        type="text"
+                                        value={editCategoryValue}
+                                        onChange={(e) => setEditCategoryValue(e.target.value)}
+                                        className="bg-white border-gray-200 rounded-lg px-2 py-0.5 text-sm font-bold focus:ring-brand-yellow focus:border-brand-yellow w-48"
+                                        autoFocus
+                                      />
+                                      <button
+                                        onClick={() => {
+                                          if (editCategoryValue.trim() && editCategoryValue.trim() !== cat) {
+                                            const oldCat = cat;
+                                            const newCat = editCategoryValue.trim();
+                                            
+                                            const newCats = pageSettings.categories.map(c => c === oldCat ? newCat : c);
+                                            const { [oldCat]: subs, ...restSubs } = pageSettings.subcategories;
+                                            const newSubs = { ...restSubs, [newCat]: subs || [] };
+                                            const { [oldCat]: banner, ...restBanners } = pageSettings.categoryBanners;
+                                            const newBanners = banner ? { ...restBanners, [newCat]: banner } : pageSettings.categoryBanners;
+                                            
+                                            setPageSettings({
+                                              ...pageSettings,
+                                              categories: newCats,
+                                              subcategories: newSubs,
+                                              categoryBanners: newBanners
+                                            });
+
+                                            setProducts(products.map(p => p.category === oldCat ? { ...p, category: newCat } : p));
+                                          }
+                                          setEditingCategory(null);
+                                        }}
+                                        className="p-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                                      >
+                                        <Check className="w-3 h-3" />
+                                      </button>
+                                      <button
+                                        onClick={() => setEditingCategory(null)}
+                                        className="p-1 bg-gray-100 text-gray-500 rounded hover:bg-gray-200 transition-colors"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-2">
+                                      <h3 className="text-sm font-black text-brand-dark uppercase tracking-tight">{cat}</h3>
+                                    </div>
+                                  )}
                                   <div className="flex items-center gap-2">
                                     <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
                                       {(pageSettings.subcategories[cat] || []).length} Sottocategorie
@@ -5325,7 +5373,19 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                 </div>
                               </div>
                               
-                              <div className="flex gap-2 items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="flex gap-2 items-center">
+                                {/* Tasto modifica nome (matita) sempre visibile in chiaro */}
+                                <button
+                                  onClick={() => {
+                                    setEditingCategory(cat);
+                                    setEditCategoryValue(cat);
+                                  }}
+                                  className="p-2 bg-gray-100 text-gray-600 hover:bg-brand-yellow hover:text-brand-dark rounded-xl transition-all flex items-center justify-center"
+                                  title="Modifica nome categoria"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+
                                 {addingSubcategoryTo === cat ? (
                                   <div className="flex gap-1 items-center mr-2">
                                     <input 
@@ -5367,7 +5427,7 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                 ) : (
                                   <button 
                                     onClick={() => setAddingSubcategoryTo(cat)}
-                                    className="p-2 text-gray-400 hover:text-brand-dark hover:bg-brand-yellow/20 rounded-lg transition-all"
+                                    className="p-2 bg-blue-50 text-blue-600 hover:bg-brand-blue hover:text-white rounded-xl transition-all flex items-center justify-center"
                                     title="Aggiungi Sottocategoria"
                                   >
                                     <Plus className="w-4 h-4" />
@@ -5403,7 +5463,7 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                 ) : (
                                   <button 
                                     onClick={() => setCategoryToDelete(cat)}
-                                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                    className="p-2 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded-xl transition-all flex items-center justify-center"
                                     title="Elimina Categoria"
                                   >
                                     <X className="w-4 h-4" />
@@ -5418,7 +5478,7 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                 <div key={sub} className="flex items-center justify-between py-1.5 group/sub">
                                   <div className="flex items-center gap-4">
                                      {/* Sub Order Buttons */}
-                                     <div className="flex flex-col gap-0.5 mr-1 opacity-0 group-hover/sub:opacity-100 transition-all">
+                                     <div className="flex flex-col gap-0.5 mr-1 transition-all">
                                        <button 
                                          onClick={() => {
                                            if (sIdx > 0) {
@@ -5449,7 +5509,58 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
 
                                      <div className="flex items-center gap-2">
                                        <div className="w-1.5 h-1.5 rounded-full bg-gray-300" />
-                                       <span className="text-xs font-bold text-gray-600">{sub}</span>
+                                       {editingSubcategory?.category === cat && editingSubcategory?.subcategory === sub ? (
+                                         <div className="flex items-center gap-1.5">
+                                           <input
+                                             type="text"
+                                             value={editSubcategoryValue}
+                                             onChange={(e) => setEditSubcategoryValue(e.target.value)}
+                                             className="bg-white border-gray-200 rounded-lg px-2 py-0.5 text-xs font-bold focus:ring-brand-yellow focus:border-brand-yellow w-36"
+                                             autoFocus
+                                           />
+                                           <button
+                                             onClick={() => {
+                                               if (editSubcategoryValue.trim() && editSubcategoryValue.trim() !== sub) {
+                                                 const oldSub = sub;
+                                                 const newSub = editSubcategoryValue.trim();
+                                                 const newSubs = pageSettings.subcategories[cat].map(s => s === oldSub ? newSub : s);
+                                                 setPageSettings({
+                                                   ...pageSettings,
+                                                   subcategories: {
+                                                     ...pageSettings.subcategories,
+                                                     [cat]: newSubs
+                                                   }
+                                                 });
+                                                 setProducts(products.map(p => p.category === cat && p.subcategory === oldSub ? { ...p, subcategory: newSub } : p));
+                                               }
+                                               setEditingSubcategory(null);
+                                             }}
+                                             className="p-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                                           >
+                                             <Check className="w-2.5 h-2.5" />
+                                           </button>
+                                           <button
+                                             onClick={() => setEditingSubcategory(null)}
+                                             className="p-1 bg-gray-100 text-gray-500 rounded hover:bg-gray-200 transition-colors"
+                                           >
+                                             <X className="w-2.5 h-2.5" />
+                                           </button>
+                                         </div>
+                                       ) : (
+                                         <div className="flex items-center gap-1.5">
+                                           <span className="text-xs font-bold text-gray-600">{sub}</span>
+                                           <button
+                                             onClick={() => {
+                                               setEditingSubcategory({ category: cat, subcategory: sub });
+                                               setEditSubcategoryValue(sub);
+                                             }}
+                                             className="p-0.5 text-gray-400 hover:text-brand-dark hover:bg-gray-100 rounded transition-colors"
+                                             title="Modifica nome sottocategoria"
+                                           >
+                                             <Edit2 className="w-2.5 h-2.5" />
+                                           </button>
+                                         </div>
+                                       )}
                                      </div>
                                      <span className="text-[10px] font-black text-gray-300 uppercase">{getProductCount(cat, sub)} Prodotti</span>
                                    </div>
@@ -5463,7 +5574,7 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                         }
                                       });
                                     }}
-                                    className="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover/sub:opacity-100 transition-all"
+                                    className="p-1 text-gray-300 hover:text-red-500 transition-all"
                                   >
                                     <X className="w-3 h-3" />
                                   </button>
@@ -6409,7 +6520,8 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                 <th className="p-4 text-center">In Vetrina</th>
                                 <th className="p-4 text-center">Scelti Per Te</th>
                                 <th className="p-4">Categoria / Variante</th>
-                                <th className="p-4">Prezzo Base</th>
+                                <th className="p-4">Prezzo</th>
+                                <th className="p-4 text-center">Quantità (Stock)</th>
                                 <th className="p-4 text-center">Canali Attivi</th>
                                 <th className="p-4 text-right">Azioni</th>
                               </tr>
@@ -6428,121 +6540,333 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                 let matchesChannel = true;
                                 if (adminChannelFilter === "Web") matchesChannel = (p.stock || 0) > 0;
                                 if (adminChannelFilter === "Amazon") matchesChannel = (p.amazonStock || 0) > 0;
-                                if (adminChannelFilter === "Ebay") matchesChannel = (p.ebayStock || 0) > 0;
-
-                                const matchesFeatured = !showFeaturedOnly || p.isFeatured;
+                                 const matchesFeatured = !showFeaturedOnly || p.isFeatured;
                                 const matchesSpecial = !showSpecialOnly || p.isSpecialPromotion;
                                 
                                 return matchesSearch && matchesCategory && matchesBrand && matchesChannel && matchesFeatured && matchesSpecial;
                               }).map(p => (
-                                <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
-                                  <td className="p-4">
-                                    <div className="flex items-center gap-4">
-                                      <img src={p.image} alt={p.name} className="w-12 h-12 rounded-xl object-cover bg-gray-100" />
-                                      <div>
-                                        <p className="font-bold text-sm text-brand-dark">{p.name}</p>
-                                        <p className="text-xs text-gray-500 font-medium">SKU: {p.sku || `BP-${p.id.padStart(4, '0')}`}</p>
+                                <React.Fragment key={p.id}>
+                                  <tr 
+                                    className={`hover:bg-gray-50/50 transition-colors ${p.variants && p.variants.length > 0 ? 'cursor-pointer select-none' : ''}`}
+                                    onClick={(e) => {
+                                      const target = e.target as HTMLElement;
+                                      if (target.closest('input, button, select, label, checkbox, a')) return;
+                                      if (p.variants && p.variants.length > 0) {
+                                        setExpandedProducts(prev => ({ ...prev, [p.id]: !prev[p.id] }));
+                                      }
+                                    }}
+                                  >
+                                    <td className="p-4">
+                                      <div className="flex items-center gap-4">
+                                        <img src={p.image} alt={p.name} className="w-12 h-12 rounded-xl object-cover bg-gray-100" />
+                                        <div>
+                                          <div className="flex items-center gap-2">
+                                            <p className="font-bold text-sm text-brand-dark">{p.name}</p>
+                                            {p.variants && p.variants.length > 0 && (
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setExpandedProducts(prev => ({ ...prev, [p.id]: !prev[p.id] }));
+                                                }}
+                                                className="text-[8px] font-black px-1.5 py-0.5 bg-brand-yellow/20 text-brand-orange border border-brand-yellow rounded-md uppercase tracking-wider hover:bg-brand-yellow hover:text-brand-dark transition-all flex items-center gap-1 active:scale-95 animate-pulse"
+                                                title="Clicca per mostrare/nascondere le varianti"
+                                              >
+                                                <span>Varianti</span>
+                                                <span className="text-[7px]">{expandedProducts[p.id] ? "▲" : "▼"}</span>
+                                              </button>
+                                            )}
+                                          </div>
+                                          <p className="text-xs text-gray-500 font-medium">SKU: {p.sku || `BP-${p.id.padStart(4, '0')}`}</p>
+                                        </div>
                                       </div>
-                                    </div>
-                                  </td>
-                                  <td className="p-4">
-                                    <span className="text-xs font-black uppercase text-brand-blue tracking-tighter">{p.brand || "-"}</span>
-                                  </td>
-                                  <td className="p-4">
-                                      <div className="flex justify-center">
-                                         <label className="relative inline-flex items-center cursor-pointer group">
-                                            <input 
-                                              type="checkbox" 
-                                              className="sr-only peer" 
-                                              checked={p.isFeatured} 
-                                              onChange={() => {
-                                                const newFeatured = !p.isFeatured;
-                                                setProducts(prev => prev.map(prod => prod.id === p.id ? { ...prod, isFeatured: newFeatured } : prod));
-                                                setCartTrigger(c => c + 1); 
-                                              }} 
-                                            />
-                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-yellow relative"></div>
-                                         </label>
+                                    </td>
+                                    <td className="p-4">
+                                      <span className="text-xs font-black uppercase text-brand-blue tracking-tighter">{p.brand || "-"}</span>
+                                    </td>
+                                    <td className="p-4">
+                                        <div className="flex justify-center">
+                                           <label className="relative inline-flex items-center cursor-pointer group">
+                                              <input 
+                                                type="checkbox" 
+                                                className="sr-only peer" 
+                                                checked={p.isFeatured} 
+                                                onChange={() => {
+                                                  const newFeatured = !p.isFeatured;
+                                                  setProducts(prev => prev.map(prod => prod.id === p.id ? { ...prod, isFeatured: newFeatured } : prod));
+                                                  setCartTrigger(c => c + 1); 
+                                                }} 
+                                              />
+                                              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-yellow relative"></div>
+                                           </label>
+                                        </div>
+                                    </td>
+                                    <td className="p-4">
+                                       <div className="flex justify-center">
+                                          <label className="relative inline-flex items-center cursor-pointer group">
+                                             <input 
+                                               type="checkbox" 
+                                               className="sr-only peer" 
+                                               checked={p.isSpecialPromotion} 
+                                               onChange={() => {
+                                                 const newSpecial = !p.isSpecialPromotion;
+                                                 setProducts(prev => prev.map(prod => prod.id === p.id ? { ...prod, isSpecialPromotion: newSpecial } : prod));
+                                                 setCartTrigger(c => c + 1); 
+                                               }} 
+                                             />
+                                             <div className="w-11 h-6 bg-gray-100 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-200 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600 relative"></div>
+                                             {p.isSpecialPromotion && <Star className="absolute left-[3px] top-[4px] w-3 h-3 text-white pointer-events-none z-10 fill-current" />}
+                                          </label>
+                                       </div>
+                                   </td>
+                                    <td className="p-4">
+                                      <div className="flex flex-col gap-1">
+                                        <span className="text-xs font-bold px-2 py-1 bg-gray-100 text-gray-600 rounded-md w-fit">{p.category}</span>
+                                        {p.variants && p.variants.length > 0 ? (
+                                           <span className="text-[9px] font-black px-2 py-0.5 bg-brand-yellow text-brand-dark rounded-md w-fit uppercase tracking-wider">
+                                             {p.variants.length} Varianti
+                                           </span>
+                                         ) : (
+                                           <span className="text-xs text-gray-500">{p.subcategory}</span>
+                                         )}
                                       </div>
-                                  </td>
-                                  <td className="p-4">
-                                     <div className="flex justify-center">
-                                        <label className="relative inline-flex items-center cursor-pointer group">
-                                           <input 
-                                             type="checkbox" 
-                                             className="sr-only peer" 
-                                             checked={p.isSpecialPromotion} 
-                                             onChange={() => {
-                                               const newSpecial = !p.isSpecialPromotion;
-                                               setProducts(prev => prev.map(prod => prod.id === p.id ? { ...prod, isSpecialPromotion: newSpecial } : prod));
-                                               setCartTrigger(c => c + 1); 
-                                             }} 
-                                           />
-                                           <div className="w-11 h-6 bg-gray-100 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-200 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600 relative"></div>
-                                           {p.isSpecialPromotion && <Star className="absolute left-[3px] top-[4px] w-3 h-3 text-white pointer-events-none z-10 fill-current" />}
-                                        </label>
-                                     </div>
-                                 </td>
-                                  <td className="p-4">
-                                    <div className="flex flex-col gap-1">
-                                      <span className="text-xs font-bold px-2 py-1 bg-gray-100 text-gray-600 rounded-md w-fit">{p.category}</span>
-                                      <span className="text-xs text-gray-500">{p.subcategory}</span>
-                                    </div>
-                                  </td>
-                                  <td className="p-4 font-black text-brand-dark">€{p.price.toFixed(2)}</td>
-                                  <td className="p-4">
-                                    <div className="flex justify-center gap-2">
-                                      {(p.amazonStock || 0) > 0 && (
-                                        <span className="w-6 h-6 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center cursor-help overflow-hidden hover:scale-110 transition-transform" title={`Amazon.it (${p.amazonStock})`}>
-                                          <img src="https://upload.wikimedia.org/wikipedia/commons/4/4a/Amazon_icon.svg" className="w-3 h-3 object-contain" alt="Amazon" />
-                                        </span>
+                                    </td>
+                                    <td className="p-4">
+                                      <div className="relative w-24">
+                                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-black text-gray-400">€</span>
+                                        <input 
+                                          type="number" 
+                                          step="0.01"
+                                          value={p.price} 
+                                          onChange={e => {
+                                            const newPrice = parseFloat(e.target.value) || 0;
+                                            setProducts(prev => prev.map(prod => prod.id === p.id ? { ...prod, price: newPrice } : prod));
+                                          }}
+                                          className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-5 pr-1 py-1 text-xs font-black text-brand-dark focus:ring-1 focus:ring-brand-yellow focus:bg-white transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        />
+                                      </div>
+                                    </td>
+                                    <td className="p-4 text-center">
+                                      {p.variants && p.variants.length > 0 ? (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setExpandedProducts(prev => ({ ...prev, [p.id]: !prev[p.id] }));
+                                          }}
+                                          className="font-black text-xs text-brand-dark bg-brand-yellow/10 hover:bg-brand-yellow/30 px-3 py-1.5 rounded-xl border border-brand-yellow/20 inline-block transition-all active:scale-95 shadow-sm"
+                                        >
+                                          Tot: {p.variants.reduce((acc: number, curr: any) => acc + (Number(curr.webStock) || 0), 0)}
+                                        </button>
+                                      ) : (
+                                        <input 
+                                          type="number" 
+                                          value={p.stock ?? 0} 
+                                          onChange={e => {
+                                            const newStock = parseInt(e.target.value) || 0;
+                                            setProducts(prev => prev.map(prod => prod.id === p.id ? { ...prod, stock: newStock } : prod));
+                                          }}
+                                          className="w-16 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-xs font-black text-center text-brand-dark focus:ring-1 focus:ring-brand-yellow focus:bg-white transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        />
                                       )}
-                                      {(p.ebayStock || 0) > 0 && (
-                                        <span className="w-6 h-6 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center cursor-help overflow-hidden hover:scale-110 transition-transform" title={`eBay (${p.ebayStock})`}>
-                                          <img src="https://upload.wikimedia.org/wikipedia/commons/1/1b/EBay_logo.svg" className="w-3 h-3 object-contain" alt="eBay" />
-                                        </span>
-                                      )}
-                                      {(p.stock || 0) > 0 && (
-                                        <span className="w-6 h-6 rounded-full bg-brand-dark text-brand-yellow flex items-center justify-center cursor-help overflow-hidden hover:scale-110 transition-transform" title={`Sito Web (${p.stock})`}>
-                                          <Layers className="w-3 h-3" />
-                                        </span>
-                                      )}
-                                      {!(p.stock || 0) && !(p.amazonStock || 0) && !(p.ebayStock || 0) && (
-                                        <span className="text-[9px] font-black text-red-500 uppercase">Esaurito</span>
-                                      )}
-                                    </div>
-                                  </td>
-                                  <td className="p-4 text-right">
-                                    <button 
-                                      onClick={() => {
-                                        setEditingAdminProduct(p);
-                                        setAdminProductView('single');
-                                      }}
-                                      className="p-2 text-gray-400 hover:text-brand-yellow hover:bg-brand-dark rounded-lg transition-colors inline-block"
-                                      title="Modifica Singolo"
-                                    >
-                                      <Edit2 className="w-5 h-5" />
-                                    </button>
-                                    <button 
-                                      onClick={() => {
-                                        setAdminConfirmAction({
-                                          active: true,
-                                          title: "Elimina Prodotto",
-                                          message: `Sei sicuro di voler eliminare definitivamente "${p.name}"? Questa operazione non può essere annullata.`,
-                                          color: "bg-red-500",
-                                          onConfirm: () => {
-                                            setProducts(prev => prev.filter(prod => prod.id !== p.id));
-                                            addToast("Prodotto eliminato con successo!", "success");
-                                          }
-                                        });
-                                      }}
-                                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors inline-block"
-                                      title="Elimina Prodotto"
-                                    >
-                                      <Trash2 className="w-5 h-5" />
-                                    </button>
-                                  </td>
-                                </tr>
+                                    </td>
+                                    <td className="p-4">
+                                      <div className="flex justify-center gap-2">
+                                        {(p.amazonStock || 0) > 0 && (
+                                          <span className="w-6 h-6 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center cursor-help overflow-hidden hover:scale-110 transition-transform" title={`Amazon.it (${p.amazonStock})`}>
+                                            <img src="https://upload.wikimedia.org/wikipedia/commons/4/4a/Amazon_icon.svg" className="w-3 h-3 object-contain" alt="Amazon" />
+                                          </span>
+                                        )}
+                                        {(p.ebayStock || 0) > 0 && (
+                                          <span className="w-6 h-6 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center cursor-help overflow-hidden hover:scale-110 transition-transform" title={`eBay (${p.ebayStock})`}>
+                                            <img src="https://upload.wikimedia.org/wikipedia/commons/1/1b/EBay_logo.svg" className="w-3 h-3 object-contain" alt="eBay" />
+                                          </span>
+                                        )}
+                                        {(p.stock || 0) > 0 && (
+                                          <span className="w-6 h-6 rounded-full bg-brand-dark text-brand-yellow flex items-center justify-center cursor-help overflow-hidden hover:scale-110 transition-transform" title={`Sito Web (${p.stock})`}>
+                                            <Layers className="w-3 h-3" />
+                                          </span>
+                                        )}
+                                        {!(p.stock || 0) && !(p.amazonStock || 0) && !(p.ebayStock || 0) && (
+                                          <span className="text-[9px] font-black text-red-500 uppercase">Esaurito</span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="p-4 text-right">
+                                      <button 
+                                        onClick={() => {
+                                          setEditingAdminProduct(p);
+                                          setAdminProductView('single');
+                                        }}
+                                        className="p-2 text-gray-400 hover:text-brand-yellow hover:bg-brand-dark rounded-lg transition-colors inline-block"
+                                        title="Modifica Singolo"
+                                      >
+                                        <Edit2 className="w-5 h-5" />
+                                      </button>
+                                      <button 
+                                        onClick={() => {
+                                          setAdminConfirmAction({
+                                            active: true,
+                                            title: "Elimina Prodotto",
+                                            message: `Sei sicuro di voler eliminare definitivamente "${p.name}"? Questa operazione non può essere annullata.`,
+                                            color: "bg-red-500",
+                                            onConfirm: () => {
+                                              setProducts(prev => prev.filter(prod => prod.id !== p.id));
+                                              addToast("Prodotto eliminato con successo!", "success");
+                                            }
+                                          });
+                                        }}
+                                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors inline-block"
+                                        title="Elimina Prodotto"
+                                      >
+                                        <Trash2 className="w-5 h-5" />
+                                      </button>
+                                    </td>
+                                  </tr>
+
+                                  {/* RIGA ESPANDIBILE VARIANTI */}
+                                  {expandedProducts[p.id] && p.variants && p.variants.length > 0 && (
+                                    <tr className="bg-brand-yellow/5">
+                                      <td colSpan={9} className="p-6 border-b border-gray-100">
+                                        <div className="bg-white rounded-[2rem] border border-brand-yellow/30 p-6 space-y-4 shadow-lg">
+                                          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                                            <div className="flex items-center gap-2">
+                                              <Layers className="w-5 h-5 text-brand-orange" />
+                                              <h4 className="text-sm font-black text-brand-dark uppercase tracking-tight">Dettaglio Varianti per: {p.name}</h4>
+                                            </div>
+                                            <span className="text-[10px] font-black uppercase text-brand-orange bg-brand-yellow/20 px-3 py-1 rounded-full">
+                                              {p.variants.length} Varianti Attive
+                                            </span>
+                                          </div>
+                                          <div className="overflow-x-auto">
+                                            <table className="w-full text-left border-collapse">
+                                              <thead>
+                                                <tr className="border-b border-gray-100 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                                  <th className="py-2 px-4">Valore Variante</th>
+                                                  <th className="py-2 px-4">SKU</th>
+                                                  <th className="py-2 px-4 text-center">Quantità (Stock Web)</th>
+                                                  <th className="py-2 px-4 text-center">Prezzo Variante (€)</th>
+                                                  <th className="py-2 px-4 text-center">Spedizione</th>
+                                                  <th className="py-2 px-4 text-right">Azione</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-gray-50">
+                                                {p.variants.map((v: any, vIdx: number) => {
+                                                  const basePrice = p.price || 0;
+                                                  let varPrice = basePrice;
+                                                  if (v.costType === 'fixed') varPrice = v.costValue || basePrice;
+                                                  else if (v.costType === 'delta') varPrice = basePrice + (v.costValue || 0);
+                                                  else if (v.costType === 'percent') varPrice = basePrice * (1 + (v.costValue || 0) / 100);
+
+                                                  return (
+                                                    <tr key={v.id || vIdx} className="hover:bg-gray-50/50 transition-colors">
+                                                      <td className="py-3 px-4 font-bold text-xs text-brand-dark uppercase">{v.value}</td>
+                                                      <td className="py-3 px-4 font-mono text-[10px] text-gray-500">{v.sku || 'N/A'}</td>
+                                                      
+                                                      {/* Quantità modificabile inline */}
+                                                      <td className="py-3 px-4 text-center">
+                                                        <input 
+                                                          type="number" 
+                                                          value={v.webStock ?? 0}
+                                                          onChange={e => {
+                                                            const newStock = parseInt(e.target.value) || 0;
+                                                            const updatedVariants = p.variants.map((varItem: any, idx: number) => 
+                                                              idx === vIdx ? { ...varItem, webStock: newStock } : varItem
+                                                            );
+                                                            const totalStock = updatedVariants.reduce((acc: number, curr: any) => acc + (Number(curr.webStock) || 0), 0);
+                                                            setProducts(prev => prev.map(prod => prod.id === p.id ? { 
+                                                              ...prod, 
+                                                              variants: updatedVariants,
+                                                              stock: totalStock 
+                                                            } : prod));
+                                                          }}
+                                                          className="w-16 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-xs font-black text-center text-brand-dark focus:ring-1 focus:ring-brand-yellow focus:bg-white"
+                                                        />
+                                                      </td>
+                                                      
+                                                      {/* Prezzo modificabile inline */}
+                                                      <td className="py-3 px-4 text-center">
+                                                        <div className="relative w-24 mx-auto">
+                                                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-black text-gray-400">€</span>
+                                                          <input 
+                                                            type="number" 
+                                                            step="0.01"
+                                                            value={v.costValue === 0 ? "" : v.costValue}
+                                                            placeholder={basePrice.toFixed(2)}
+                                                            onChange={e => {
+                                                              const val = e.target.value === "" ? 0 : parseFloat(e.target.value);
+                                                              const updatedVariants = p.variants.map((varItem: any, idx: number) => 
+                                                                idx === vIdx ? { ...varItem, costValue: val } : varItem
+                                                              );
+                                                              setProducts(prev => prev.map(prod => prod.id === p.id ? { 
+                                                                ...prod, 
+                                                                variants: updatedVariants 
+                                                              } : prod));
+                                                            }}
+                                                            className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-5 pr-1 py-1 text-xs font-black text-brand-dark focus:ring-1 focus:ring-brand-yellow focus:bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                          />
+                                                        </div>
+                                                        <span className="text-[8px] text-gray-400 font-bold block mt-0.5">
+                                                          Finito: €{varPrice.toFixed(2)} ({v.costType})
+                                                        </span>
+                                                      </td>
+                                                      
+                                                      {/* Spedizione modello */}
+                                                      <td className="py-3 px-4 text-center">
+                                                        <button
+                                                          onClick={() => {
+                                                            const updatedVariants = p.variants.map((varItem: any, idx: number) => 
+                                                              idx === vIdx ? { ...varItem, freeShipping: !varItem.freeShipping } : varItem
+                                                            );
+                                                            setProducts(prev => prev.map(prod => prod.id === p.id ? { 
+                                                              ...prod, 
+                                                              variants: updatedVariants 
+                                                            } : prod));
+                                                          }}
+                                                          className={`text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg border transition-all ${
+                                                            v.freeShipping 
+                                                              ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-100' 
+                                                              : 'bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100'
+                                                          }`}
+                                                        >
+                                                          {v.freeShipping ? 'Gratuita' : 'A Pagamento'}
+                                                        </button>
+                                                      </td>
+                                                      
+                                                      {/* Link rapidi */}
+                                                      <td className="py-3 px-4 text-right">
+                                                        <div className="flex items-center justify-end gap-2">
+                                                          <button 
+                                                            onClick={() => {
+                                                              setIsAdminOpen(false);
+                                                              handleProductSelect(p);
+                                                            }}
+                                                            className="px-2.5 py-1 bg-brand-yellow text-brand-dark hover:bg-brand-dark hover:text-brand-yellow rounded-lg text-[9px] font-black uppercase tracking-widest transition-all"
+                                                            title="Apri la scheda prodotto sul sito web"
+                                                          >
+                                                            Vedi sul Sito
+                                                          </button>
+                                                          <button 
+                                                            onClick={() => {
+                                                              setEditingAdminProduct(p);
+                                                              setAdminProductView('single');
+                                                            }}
+                                                            className="px-2.5 py-1 bg-brand-dark text-brand-yellow hover:bg-brand-yellow hover:text-brand-dark rounded-lg text-[9px] font-black uppercase tracking-widest transition-all"
+                                                            title="Modifica variante"
+                                                          >
+                                                            Modifica
+                                                          </button>
+                                                        </div>
+                                                      </td>
+                                                    </tr>
+                                                  );
+                                                })}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </React.Fragment>
                               ))}
                             </tbody>
                           </table>
