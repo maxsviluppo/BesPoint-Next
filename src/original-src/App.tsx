@@ -665,12 +665,9 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop, reviews = [], 
                     </>
                   )}
                 </div>
-                <h2 className="text-2xl lg:text-3xl font-black text-brand-dark leading-tight">{product.name}</h2>
-                {selectedVariantObject?.title && (
-                  <h3 className="text-base font-black text-brand-blue mt-1.5 leading-snug">
-                    {selectedVariantObject.title}
-                  </h3>
-                )}
+                <h2 className="text-2xl lg:text-3xl font-black text-brand-dark leading-tight">
+                  {(selectedVariantObject && selectedVariantObject.title) ? selectedVariantObject.title : product.name}
+                </h2>
                 {selectedVariantObject?.note && (
                   <div className="mt-3 p-3 bg-brand-yellow/10 border border-brand-yellow/30 rounded-2xl">
                     <p className="text-[9px] font-black uppercase text-brand-orange tracking-wider">NOTA</p>
@@ -845,10 +842,23 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop, reviews = [], 
                   </div>
                 ))}
 
-                <div className="flex items-center gap-2 text-xs text-green-600 font-bold bg-green-50 p-3 rounded-xl border border-green-100">
-                  <Shield className="w-4 h-4" />
-                  <span>{selectedVariantObject ? `In stock: ${selectedVariantObject.webStock}` : 'Disponibilità immediata'}</span>
-                </div>
+                {(() => {
+                  const isAvailable = selectedVariantObject 
+                    ? (selectedVariantObject.webStock > 0)
+                    : ((product.stock ?? 0) > 0);
+                  
+                  return isAvailable ? (
+                    <div className="flex items-center gap-2 text-xs text-green-600 font-bold bg-green-50 p-3 rounded-xl border border-green-100">
+                      <Shield className="w-4 h-4 text-green-500 animate-pulse" />
+                      <span>Disponibile</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-xs text-red-600 font-bold bg-red-50 p-3 rounded-xl border border-red-100">
+                      <X className="w-4 h-4 text-red-500" />
+                      <span>Non disponibile</span>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Reviews Summary */}

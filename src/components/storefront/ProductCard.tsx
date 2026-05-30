@@ -38,6 +38,18 @@ export function ProductCard({
       ? productReviews.length + (product.reviews || 0)
       : product.reviews || 0;
 
+  const getDisplayPrice = () => {
+    const basePrice = product.price || 0;
+    if (product.variants && product.variants.length > 0) {
+      const firstVar = product.variants[0];
+      if (firstVar.costType === 'fixed') return firstVar.costValue || basePrice;
+      if (firstVar.costType === 'delta') return basePrice + (firstVar.costValue || 0);
+      if (firstVar.costType === 'percent') return basePrice * (1 + (firstVar.costValue || 0) / 100);
+    }
+    return basePrice;
+  };
+  const displayPrice = getDisplayPrice();
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20, scale: 0.95 }}
@@ -133,9 +145,9 @@ export function ProductCard({
           className="flex items-baseline gap-1 mb-3"
         >
           <span className="text-xs font-bold align-top">€</span>
-          <span className="text-xl font-bold">{Math.floor(product.price || 0)}</span>
+          <span className="text-xl font-bold">{Math.floor(displayPrice)}</span>
           <span className="text-xs font-bold">
-            {((product.price || 0) % 1).toFixed(2).substring(2)}
+            {(displayPrice % 1).toFixed(2).substring(2)}
           </span>
         </motion.div>
         <motion.button
