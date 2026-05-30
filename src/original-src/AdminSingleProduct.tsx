@@ -1427,7 +1427,7 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                              <div className="flex flex-col gap-1">
                                <span className="text-[9px] font-black uppercase text-gray-400 tracking-widest pl-1">Valore</span>
                                <input 
-                                 type="text" value={v.value}
+                                 type="text" value={v.value ?? ""}
                                  onChange={e => {
                                    const val = e.target.value;
                                    const newV = [...variants]; 
@@ -1447,7 +1447,7 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                                 <span className="text-[9px] font-black uppercase text-gray-400 tracking-widest pl-1">Titolo Variante (Descrizione)</span>
                                 <input 
                                   type="text" 
-                                  value={v.title || ""}
+                                  value={v.title ?? ""}
                                   onChange={e => { const newV = [...variants]; newV[i].title = e.target.value; setVariants(newV); }}
                                   placeholder="es. Antifurto Bianco con sensore PIR"
                                   className="w-full bg-gray-50 rounded-xl px-4 py-3 text-[11px] font-bold border border-gray-200 outline-none focus:ring-2 focus:ring-brand-blue/30 transition-all"
@@ -1457,7 +1457,7 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                                 <span className="text-[9px] font-black uppercase text-gray-400 tracking-widest pl-1">Nota Variante (Opzionale)</span>
                                 <input 
                                   type="text" 
-                                  value={v.note || ""}
+                                  value={v.note ?? ""}
                                   onChange={e => { const newV = [...variants]; newV[i].note = e.target.value; setVariants(newV); }}
                                   placeholder="es. Spedizione rapida 24h"
                                   className="w-full bg-gray-50 rounded-xl px-4 py-3 text-[11px] font-bold border border-gray-200 outline-none focus:ring-2 focus:ring-brand-blue/30 transition-all"
@@ -1470,7 +1470,7 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                              <div className="flex flex-col gap-1">
                                <span className="text-[9px] font-black uppercase text-gray-400 tracking-widest pl-1">SKU Variante</span>
                                <input 
-                                 type="text" value={v.sku}
+                                 type="text" value={v.sku ?? ""}
                                  onChange={e => { const newV = [...variants]; newV[i].sku = e.target.value; setVariants(newV); }}
                                  placeholder="SKU-001"
                                  className="w-full bg-gray-50 rounded-xl px-4 py-3 text-[11px] font-bold border border-gray-200 outline-none focus:ring-2 focus:ring-brand-blue/30 transition-all"
@@ -1495,7 +1495,7 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                                   </label>
                                 </div>
                                <input 
-                                 type="text" value={v.ean}
+                                 type="text" value={v.ean ?? ""}
                                  onChange={e => { const newV = [...variants]; newV[i].ean = e.target.value; setVariants(newV); }}
                                  placeholder="801234..."
                                  className="w-full bg-gray-50 rounded-xl px-4 py-3 text-[11px] font-bold border border-gray-200 outline-none focus:ring-2 focus:ring-brand-blue/30 transition-all"
@@ -1519,7 +1519,7 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                                <input 
                                  type="number" 
                                  step="0.01" 
-                                 value={v.costValue === 0 ? "" : v.costValue}
+                                 value={v.costValue === 0 || v.costValue === undefined ? "" : v.costValue}
                                  placeholder="0.00"
                                  onChange={e => { 
                                    const val = e.target.value === "" ? 0 : Number(e.target.value);
@@ -1540,7 +1540,7 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                                  <Globe className="w-3 h-3 text-indigo-300" />
                                </div>
                                <input 
-                                 type="number" value={v.webStock}
+                                 type="number" value={v.webStock ?? ""}
                                  onFocus={e => (v.webStock === 0 || v.webStock === ('' as any)) && ( () => { const newV = [...variants]; newV[i].webStock = '' as any; setVariants(newV); } )()}
                                  onChange={e => {
                                    const val = Number(e.target.value); const newV = [...variants]; newV[i].webStock = val;
@@ -1557,7 +1557,7 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                                    <ExternalLink className="w-3 h-3 text-orange-300" />
                                  </div>
                                  <input 
-                                   type="number" value={v.amazonStock}
+                                   type="number" value={v.amazonStock ?? ""}
                                    onFocus={e => (v.amazonStock === 0 || v.amazonStock === ('' as any)) && ( () => { const newV = [...variants]; newV[i].amazonStock = '' as any; setVariants(newV); } )()}
                                    onChange={e => {
                                      const val = Number(e.target.value); const newV = [...variants]; newV[i].amazonStock = val;
@@ -1575,7 +1575,7 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                                    <ExternalLink className="w-3 h-3 text-blue-300" />
                                  </div>
                                  <input 
-                                   type="number" value={v.ebayStock}
+                                   type="number" value={v.ebayStock ?? ""}
                                    onFocus={e => (v.ebayStock === 0 || v.ebayStock === ('' as any)) && ( () => { const newV = [...variants]; newV[i].ebayStock = '' as any; setVariants(newV); } )()}
                                    onChange={e => {
                                      const val = Number(e.target.value); const newV = [...variants]; newV[i].ebayStock = val;
