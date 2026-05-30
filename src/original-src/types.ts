@@ -44,6 +44,8 @@ export interface Product {
     type: string;
     value: string;
     sku: string;
+    title?: string;
+    note?: string;
     ean?: string;
     showEan?: boolean;
     webStock: number;

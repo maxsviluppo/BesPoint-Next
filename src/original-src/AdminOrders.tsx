@@ -71,6 +71,8 @@ interface AdminOrdersProps {
   returnRequests?: any[];
   setReturnRequests?: React.Dispatch<React.SetStateAction<any[]>>;
   onViewReturn?: (returnId: string) => void;
+  initialSelectedOrderId?: string | null;
+  onClearSelectedOrderId?: () => void;
 }
 
 export const AdminOrders = ({ 
@@ -79,11 +81,19 @@ export const AdminOrders = ({
   pageSettings,
   returnRequests = [],
   setReturnRequests = () => {},
-  onViewReturn
+  onViewReturn,
+  initialSelectedOrderId,
+  onClearSelectedOrderId
 }: AdminOrdersProps) => {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(initialSelectedOrderId || null);
+
+  React.useEffect(() => {
+    if (initialSelectedOrderId) {
+      setSelectedOrderId(initialSelectedOrderId);
+    }
+  }, [initialSelectedOrderId]);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [carrierSelectorId, setCarrierSelectorId] = useState<string | null>(null);
   const [startDate, setStartDate] = useState("");
@@ -1010,7 +1020,10 @@ export const AdminOrders = ({
                   </p>
                 </div>
                 <button 
-                  onClick={() => setSelectedOrderId(null)}
+                  onClick={() => {
+                    setSelectedOrderId(null);
+                    if (onClearSelectedOrderId) onClearSelectedOrderId();
+                  }}
                   className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl transition-all"
                 >
                   <X className="w-6 h-6 text-white" />

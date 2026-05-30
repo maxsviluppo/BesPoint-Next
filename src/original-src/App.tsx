@@ -98,6 +98,17 @@ import { useApp } from "@/context/AppProvider";
 
 // --- Components ---
 
+export const getProductDisplayPrice = (product: Product) => {
+  const basePrice = product.price || 0;
+  if (product.variants && product.variants.length > 0) {
+    const firstVar = product.variants[0];
+    if (firstVar.costType === 'fixed') return firstVar.costValue || basePrice;
+    if (firstVar.costType === 'delta') return basePrice + (firstVar.costValue || 0);
+    if (firstVar.costType === 'percent') return basePrice * (1 + (firstVar.costValue || 0) / 100);
+  }
+  return basePrice;
+};
+
 const CartSplash = ({ trigger, isMenuHidden, count }: { trigger: number; isMenuHidden: boolean; count: number; key?: any }) => {
   const [isVisible, setIsVisible] = useState(false);
 
@@ -395,8 +406,8 @@ function ProductCard({ product, onClick, onAddToCart, index, reviews = [], isFav
           className="flex items-baseline gap-1 mb-3"
         >
           <span className="text-xs font-bold align-top">€</span>
-          <span className="text-xl font-bold">{Math.floor(product.price || 0)}</span>
-          <span className="text-xs font-bold">{((product.price || 0) % 1).toFixed(2).substring(2)}</span>
+          <span className="text-xl font-bold">{Math.floor(getProductDisplayPrice(product))}</span>
+          <span className="text-xs font-bold">{(getProductDisplayPrice(product) % 1).toFixed(2).substring(2)}</span>
         </motion.div>
         <motion.button 
           initial={{ opacity: 0, y: 10 }}
@@ -438,7 +449,7 @@ function MiniProductCard({ product, onClick, onRemove, index, isCarousel = false
       </div>
       <div className="px-1 mb-2">
         <h4 className="text-[10px] font-black text-brand-dark line-clamp-2 leading-tight uppercase tracking-tight mb-1 cursor-pointer hover:text-brand-yellow transition-colors" onClick={onClick}>{product.name}</h4>
-        <p className="text-sm font-black text-brand-blue italic">€{(product.price || 0).toFixed(2)}</p>
+        <p className="text-sm font-black text-brand-blue italic">€{getProductDisplayPrice(product).toFixed(2)}</p>
       </div>
       <button 
         onClick={onClick}
@@ -655,6 +666,17 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop, reviews = [], 
                   )}
                 </div>
                 <h2 className="text-2xl lg:text-3xl font-black text-brand-dark leading-tight">{product.name}</h2>
+                {selectedVariantObject?.title && (
+                  <h3 className="text-base font-black text-brand-blue mt-1.5 leading-snug">
+                    {selectedVariantObject.title}
+                  </h3>
+                )}
+                {selectedVariantObject?.note && (
+                  <div className="mt-3 p-3 bg-brand-yellow/10 border border-brand-yellow/30 rounded-2xl">
+                    <p className="text-[9px] font-black uppercase text-brand-orange tracking-wider">NOTA</p>
+                    <p className="text-xs font-bold text-brand-dark mt-0.5">{selectedVariantObject.note}</p>
+                  </div>
+                )}
                 {/* Peso nascosto lato utente */}
               </div>
 
@@ -785,7 +807,7 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop, reviews = [], 
                 <div className="flex flex-col gap-1">
                   {/* Prezzo originale barrato + badge sconto inline */}
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-400 line-through">€{((product?.price || 0) * 1.2).toFixed(2)}</span>
+                    <span className="text-sm text-gray-400 line-through">€{((displayPrice || 0) * 1.2).toFixed(2)}</span>
                     <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase">-20% OGGI</span>
                   </div>
                   {/* Prezzo scontato grande */}
@@ -916,7 +938,7 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop, reviews = [], 
                   </div>
                   <h5 className="text-xs font-bold text-brand-dark line-clamp-2 h-10">{p.name}</h5>
                   <div className="mt-2 flex items-center justify-between">
-                    <p className="text-sm font-black text-brand-blue">€{(p.price || 0).toFixed(2)}</p>
+                    <p className="text-sm font-black text-brand-blue">€{getProductDisplayPrice(p).toFixed(2)}</p>
                     <div className="flex items-center gap-0.5">
                       <Star className="w-3 h-3 text-brand-yellow fill-brand-yellow" />
                       <span className="text-[10px] font-bold">{p.rating}</span>
@@ -949,7 +971,7 @@ const ProductSheet = ({ product, onClose, onAddToCart, isDesktop, reviews = [], 
           <div className="flex-1 flex items-center gap-4">
             <div className="hidden lg:flex flex-col items-end flex-1 pr-6 border-r border-gray-100">
               <span className="text-xs text-gray-400 font-bold uppercase tracking-widest">Totale</span>
-              <span className="text-2xl font-black text-brand-blue">€{(product.price * quantity).toFixed(2)}</span>
+              <span className="text-2xl font-black text-brand-blue">€{(displayPrice * quantity).toFixed(2)}</span>
             </div>
             
             <button 
@@ -2355,9 +2377,11 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
   const [isGeneralSaveSuccess, setIsGeneralSaveSuccess] = useState(false);
   const [availableVariants, setAvailableVariants] = useState<string[]>(['Colore', 'Taglia']);
   const [selectedReturnId, setSelectedReturnId] = useState<string | null>(null);
+  const [selectedAdminOrderId, setSelectedAdminOrderId] = useState<string | null>(null);
   const [adminProductView, setAdminProductView] = useState<'list' | 'single' | 'mass'>('list');
   const [editingAdminProduct, setEditingAdminProduct] = useState<Product | null>(null);
   const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({});
+  const [expandedUserOrders, setExpandedUserOrders] = useState<Record<string, boolean>>({});
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [adminTopIdx, setAdminTopIdx] = useState(0);
   const [adminMidIdx, setAdminMidIdx] = useState(0);
@@ -6631,19 +6655,23 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                       </div>
                                     </td>
                                     <td className="p-4">
-                                      <div className="relative w-24">
-                                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-black text-gray-400">€</span>
-                                        <input 
-                                          type="number" 
-                                          step="0.01"
-                                          value={p.price} 
-                                          onChange={e => {
-                                            const newPrice = parseFloat(e.target.value) || 0;
-                                            setProducts(prev => prev.map(prod => prod.id === p.id ? { ...prod, price: newPrice } : prod));
-                                          }}
-                                          className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-5 pr-1 py-1 text-xs font-black text-brand-dark focus:ring-1 focus:ring-brand-yellow focus:bg-white transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                        />
-                                      </div>
+                                      {p.variants && p.variants.length > 0 ? (
+                                        <span className="text-xs font-bold text-gray-400 italic">Vedi varianti</span>
+                                      ) : (
+                                        <div className="relative w-24">
+                                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-black text-gray-400">€</span>
+                                          <input 
+                                            type="number" 
+                                            step="0.01"
+                                            value={p.price} 
+                                            onChange={e => {
+                                              const newPrice = parseFloat(e.target.value) || 0;
+                                              setProducts(prev => prev.map(prod => prod.id === p.id ? { ...prod, price: newPrice } : prod));
+                                            }}
+                                            className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-5 pr-1 py-1 text-xs font-black text-brand-dark focus:ring-1 focus:ring-brand-yellow focus:bg-white transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                          />
+                                        </div>
+                                      )}
                                     </td>
                                     <td className="p-4 text-center">
                                       {p.variants && p.variants.length > 0 ? (
@@ -6960,13 +6988,23 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                       setAdminActiveTab('returns' as any);
                       setSelectedReturnId(id);
                     }}
+                    initialSelectedOrderId={selectedAdminOrderId}
+                    onClearSelectedOrderId={() => setSelectedAdminOrderId(null)}
                   />
                 )}
                 {adminActiveTab === 'reviews' && <AdminReviews reviews={productReviews} setReviews={setProductReviews} />}
 
                 {adminActiveTab === 'couriers' && <AdminCouriers />}
                 {adminActiveTab === ('returns' as any) && <AdminReturns returns={returnRequests} setReturns={setReturnRequests} initialSelectedId={selectedReturnId} />}
-                {adminActiveTab === ('users' as any) && <AdminUsers />}
+                {adminActiveTab === ('users' as any) && (
+                  <AdminUsers 
+                    orders={orders}
+                    onViewOrder={(orderId) => {
+                      setAdminActiveTab('orders');
+                      setSelectedAdminOrderId(orderId);
+                    }}
+                  />
+                )}
 
                 {adminActiveTab === 'payments' && (
                   <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-500">
@@ -8097,7 +8135,52 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                     ))}
                                   </div>
 
-                                  <div className="flex items-center justify-between pt-4 border-t border-gray-50">
+                                  {expandedUserOrders[order.id] && (
+                                    <div className="mt-4 pt-4 border-t border-gray-50 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs bg-gray-50/50 rounded-2xl p-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                                      <div className="space-y-2">
+                                        <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest flex items-center gap-1.5">
+                                          <MapPin className="w-3.5 h-3.5 text-brand-blue" /> Indirizzo di Spedizione
+                                        </p>
+                                        <p className="font-bold text-brand-dark leading-relaxed pl-5">
+                                          {order.address}
+                                        </p>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest flex items-center gap-1.5">
+                                          <CreditCard className="w-3.5 h-3.5 text-brand-blue" /> Metodo di Pagamento
+                                        </p>
+                                        <p className="font-bold text-brand-dark pl-5 uppercase">
+                                          {order.payment || 'Non specificato'}
+                                        </p>
+                                      </div>
+                                      {(order.carrierId || order.trackingId) && (
+                                        <div className="space-y-2 md:col-span-2 pt-2 border-t border-gray-100">
+                                          <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest flex items-center gap-1.5">
+                                            <Truck className="w-3.5 h-3.5 text-brand-yellow" /> Dettagli Spedizione
+                                          </p>
+                                          <div className="pl-5 flex flex-wrap gap-4 items-center">
+                                            {order.carrierId && (
+                                              <span className="bg-white border border-gray-200 px-3 py-1 rounded-lg font-black uppercase text-[9px] tracking-wider text-brand-dark">
+                                                Corriere: {
+                                                  order.carrierId === 'gls' ? 'GLS Italy' :
+                                                  order.carrierId === 'dhl' ? 'DHL Express' :
+                                                  order.carrierId === 'brt' ? 'BRT Corriere Espresso' :
+                                                  order.carrierId === 'poste' ? 'Poste Italiane' : order.carrierId
+                                                }
+                                              </span>
+                                            )}
+                                            {order.trackingId && (
+                                              <span className="bg-blue-50 text-blue-700 border border-blue-100 px-3 py-1 rounded-lg font-black text-[9px] tracking-widest">
+                                                Tracking: {order.trackingId}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  <div className="flex items-center justify-between pt-4 border-t border-gray-50 mt-4">
                                     <div className="text-left">
                                       <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Totale Dispendio</p>
                                       <p className="text-lg font-black text-brand-dark">€{order.total.toFixed(2)}</p>
@@ -8115,8 +8198,15 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                           Conferma Ricevimento
                                         </button>
                                       )}
-                                      <button className="px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all active:scale-95">
-                                        Dettagli
+                                      <button 
+                                        onClick={() => setExpandedUserOrders(prev => ({ ...prev, [order.id]: !prev[order.id] }))}
+                                        className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all active:scale-95 ${
+                                          expandedUserOrders[order.id]
+                                            ? 'bg-brand-yellow text-brand-dark'
+                                            : 'bg-gray-50 hover:bg-gray-100 text-gray-500'
+                                        }`}
+                                      >
+                                        {expandedUserOrders[order.id] ? 'Chiudi' : 'Dettagli'}
                                       </button>
                                     </div>
                                   </div>

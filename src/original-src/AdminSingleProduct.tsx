@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { Package, X, Trash2, Layers, Globe, ExternalLink, Camera, Plus, Check, RefreshCw, Search, ChevronDown, Truck, Info, Upload, Link as LinkIcon, Star, Maximize2, Type, AlignLeft, AlignCenter, AlignRight, Bold, Italic, Underline, Image as ImageIcon, Link as LucideLink, Eraser, Zap, FileText, FileSpreadsheet, Compass, FileCode } from "lucide-react";
+import { Package, X, Trash2, Layers, Globe, ExternalLink, Camera, Plus, Check, RefreshCw, Search, ChevronDown, ChevronUp, Truck, Info, Upload, Link as LinkIcon, Star, Maximize2, Type, AlignLeft, AlignCenter, AlignRight, Bold, Italic, Underline, Image as ImageIcon, Link as LucideLink, Eraser, Zap, FileText, FileSpreadsheet, Compass, FileCode } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { CATEGORIES, SUBCATEGORIES } from "./data";
 import { GoogleGenAI, Type as GenAIType } from "@google/genai";
@@ -464,6 +464,8 @@ export const AdminSingleProduct = ({ onBack, onSave, onDelete, initialData, exis
     type: string, 
     value: string, 
     sku: string, 
+    title?: string,
+    note?: string,
     costType: 'fixed' | 'delta' | 'percent',
     costValue: number,
     webStock: number,
@@ -474,6 +476,8 @@ export const AdminSingleProduct = ({ onBack, onSave, onDelete, initialData, exis
     image: string
   }[]>(Array.isArray(initialData?.variants) ? initialData.variants.map((v: any) => ({
     ...v,
+    title: v.title || "",
+    note: v.note || "",
     ean: v.ean || "",
     showEan: v.showEan ?? true,
     image: v.image || "",
@@ -587,6 +591,16 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
   const handleManualPrice = (val: string, type: 'amazon' | 'ebay') => {
     if (type === 'amazon') setAmazonManualPrice(val);
     if (type === 'ebay') setEbayManualPrice(val);
+  };
+
+  const moveVariant = (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= variants.length) return;
+    const newVariants = [...variants];
+    const temp = newVariants[index];
+    newVariants[index] = newVariants[targetIndex];
+    newVariants[targetIndex] = temp;
+    setVariants(newVariants);
   };
 
   const handleSave = () => {
@@ -1425,7 +1439,31 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                                  className="w-full bg-gray-50 rounded-xl px-4 py-3 text-[11px] font-black uppercase border border-gray-200 outline-none focus:ring-2 focus:ring-brand-blue/30 transition-all" 
                                />
                              </div>
-                           </div>
+                            </div>
+
+                            {/* Row: Titolo & Nota */}
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="flex flex-col gap-1">
+                                <span className="text-[9px] font-black uppercase text-gray-400 tracking-widest pl-1">Titolo Variante (Descrizione)</span>
+                                <input 
+                                  type="text" 
+                                  value={v.title || ""}
+                                  onChange={e => { const newV = [...variants]; newV[i].title = e.target.value; setVariants(newV); }}
+                                  placeholder="es. Antifurto Bianco con sensore PIR"
+                                  className="w-full bg-gray-50 rounded-xl px-4 py-3 text-[11px] font-bold border border-gray-200 outline-none focus:ring-2 focus:ring-brand-blue/30 transition-all"
+                                />
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                <span className="text-[9px] font-black uppercase text-gray-400 tracking-widest pl-1">Nota Variante (Opzionale)</span>
+                                <input 
+                                  type="text" 
+                                  value={v.note || ""}
+                                  onChange={e => { const newV = [...variants]; newV[i].note = e.target.value; setVariants(newV); }}
+                                  placeholder="es. Spedizione rapida 24h"
+                                  className="w-full bg-gray-50 rounded-xl px-4 py-3 text-[11px] font-bold border border-gray-200 outline-none focus:ring-2 focus:ring-brand-blue/30 transition-all"
+                                />
+                              </div>
+                            </div>
 
                            {/* Row 2: SKU & EAN */}
                            <div className="grid grid-cols-2 gap-4">
@@ -1580,13 +1618,31 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                                >Rimuovi</button>
                              )}
                            </div>
-                           <button 
-                             onClick={() => setVariants(variants.filter((_, idx) => idx !== i))}
-                             className="mt-auto w-10 h-10 flex items-center justify-center bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all"
-                             title="Elimina Variante"
-                           >
-                             <Trash2 className="w-4 h-4" />
-                           </button>
+                           <div className="flex gap-2 w-full justify-center mt-auto">
+                             <button
+                               onClick={() => moveVariant(i, 'up')}
+                               disabled={i === 0}
+                               className="w-10 h-10 flex items-center justify-center bg-gray-50 text-gray-500 hover:bg-brand-blue hover:text-white disabled:opacity-30 disabled:hover:bg-gray-50 disabled:hover:text-gray-500 rounded-xl transition-all"
+                               title="Sposta Su"
+                             >
+                               <ChevronUp className="w-4 h-4" />
+                             </button>
+                             <button
+                               onClick={() => moveVariant(i, 'down')}
+                               disabled={i === variants.length - 1}
+                               className="w-10 h-10 flex items-center justify-center bg-gray-50 text-gray-500 hover:bg-brand-blue hover:text-white disabled:opacity-30 disabled:hover:bg-gray-50 disabled:hover:text-gray-500 rounded-xl transition-all"
+                               title="Sposta Giù"
+                             >
+                               <ChevronDown className="w-4 h-4" />
+                             </button>
+                             <button 
+                               onClick={() => setVariants(variants.filter((_, idx) => idx !== i))}
+                               className="w-10 h-10 flex items-center justify-center bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all"
+                               title="Elimina Variante"
+                             >
+                               <Trash2 className="w-4 h-4" />
+                             </button>
+                           </div>
                          </div>
 
                        </div>
@@ -1601,6 +1657,8 @@ Rispondi SOLO con JSON valido, nessun testo extra: { "title": "...", "descriptio
                      type: availableVariants[0] || 'Colore', 
                      value: "", 
                      sku: sku ? `${sku}-` : "", 
+                     title: "",
+                     note: "",
                      costType: 'fixed',
                      costValue: baseCost,
                      webStock: variants.length === 0 ? webStock : 0,

@@ -84,7 +84,7 @@ const MOCK_USERS: Customer[] = [
     }
 ];
 
-export const AdminUsers = () => {
+export const AdminUsers = ({ onViewOrder, orders = [] }: { onViewOrder?: (orderId: string) => void, orders?: any[] }) => {
     const [users, setUsers] = useState<Customer[]>(MOCK_USERS);
     const [selectedUser, setSelectedUser] = useState<Customer | null>(null);
     const [search, setSearch] = useState("");
@@ -320,7 +320,18 @@ export const AdminUsers = () => {
                                                 </div>
                                                 <div className="text-right">
                                                     <p className="text-lg font-black text-brand-dark">€{h.amount.toFixed(2)}</p>
-                                                    <button className="text-[9px] font-black text-brand-blue uppercase tracking-widest mt-1 hover:underline">Vedi Documento</button>
+                                                    {h.type === 'Ordine' ? (
+                                                      <button 
+                                                        onClick={() => {
+                                                          if (onViewOrder) onViewOrder(h.id);
+                                                        }}
+                                                        className="text-[9px] font-black text-brand-blue uppercase tracking-widest mt-1 hover:underline"
+                                                      >
+                                                        Vedi Dettaglio
+                                                      </button>
+                                                    ) : (
+                                                      <span className="text-[9px] font-bold text-gray-400 block mt-1">Reso Pratica</span>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
