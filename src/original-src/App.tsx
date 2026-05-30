@@ -2325,7 +2325,43 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authName, setAuthName] = useState('');
+  const [authFirstName, setAuthFirstName] = useState('');
+  const [authLastName, setAuthLastName] = useState('');
+  const [authProvince, setAuthProvince] = useState('');
+  const [authCity, setAuthCity] = useState('');
+  const [showAuthPassword, setShowAuthPassword] = useState(false);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [comuniList, setComuniList] = useState<any[]>([]);
   const [authError, setAuthError] = useState('');
+
+  useEffect(() => {
+    fetch('https://raw.githubusercontent.com/matteocontrini/comuni-json/master/comuni.json')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setComuniList(data);
+        }
+      })
+      .catch(err => console.error("Error fetching Italian comuni:", err));
+  }, []);
+
+  const uniqueProvinces = useMemo(() => {
+    const provincesMap = new Map<string, string>();
+    comuniList.forEach(c => {
+      if (c.provincia?.nome) {
+        provincesMap.set(c.provincia.nome, c.sigla);
+      }
+    });
+    return Array.from(provincesMap.entries()).map(([nome, sigla]) => ({ nome, sigla })).sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [comuniList]);
+
+  const filteredCities = useMemo(() => {
+    if (!authProvince) return [];
+    return comuniList
+      .filter(c => c.provincia?.nome === authProvince)
+      .map(c => c.nome)
+      .sort((a, b) => a.localeCompare(b));
+  }, [authProvince, comuniList]);
   
   const [profileEditForm, setProfileEditForm] = useState({
     nameFirst: '',
@@ -2751,12 +2787,23 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
   const handleAuthRegister = (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
-    if (authName.length < 2 || authPassword.length < 6) {
-      setAuthError('Nome o password troppo corti (min 6 car.)');
+    if (authFirstName.length < 2 || authLastName.length < 2) {
+      setAuthError('Nome e cognome devono essere di almeno 2 caratteri');
       return;
     }
+    if (authPassword.length < 6) {
+      setAuthError('La password deve contenere almeno 6 caratteri');
+      return;
+    }
+    const fullName = `${authFirstName} ${authLastName}`.trim();
     const users = getUsers();
-    const newUser = { name: authName, email: authEmail.toLowerCase(), password: authPassword };
+    const newUser = { 
+      name: fullName, 
+      email: authEmail.toLowerCase(), 
+      password: authPassword,
+      addressCity: authCity,
+      addressProvince: authProvince
+    };
     users.push(newUser);
     localStorage.setItem('bespoint_users', JSON.stringify(users));
     setCurrentUser(newUser);
@@ -2765,6 +2812,10 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
     setAuthEmail('');
     setAuthPassword('');
     setAuthName('');
+    setAuthFirstName('');
+    setAuthLastName('');
+    setAuthCity('');
+    setAuthProvince('');
     setAuthStep('email');
   };
 
@@ -8432,15 +8483,24 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                   <form onSubmit={handleAuthLogin} className="space-y-4 text-left">
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Password</label>
-                      <input 
-                        type="password" 
-                        required
-                        autoFocus
-                        value={authPassword}
-                        onChange={(e) => setAuthPassword(e.target.value)}
-                        className="w-full bg-gray-50 border-gray-200 border rounded-xl px-4 py-4 text-sm font-bold focus:ring-2 focus:ring-brand-yellow focus:bg-white transition-all shadow-inner outline-none"
-                        placeholder="••••••••"
-                      />
+                      <div className="relative">
+                        <input 
+                          type={showLoginPassword ? "text" : "password"} 
+                          required
+                          autoFocus
+                          value={authPassword}
+                          onChange={(e) => setAuthPassword(e.target.value)}
+                          className="w-full bg-gray-50 border-gray-200 border rounded-xl pl-4 pr-12 py-4 text-sm font-bold focus:ring-2 focus:ring-brand-yellow focus:bg-white transition-all shadow-inner outline-none"
+                          placeholder="••••••••"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowLoginPassword(!showLoginPassword)}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                        >
+                          {showLoginPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                        </button>
+                      </div>
                     </div>
                     <button 
                       type="submit"
@@ -8460,29 +8520,102 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
 
                 {authStep === 'register' && (
                   <form onSubmit={handleAuthRegister} className="space-y-4 text-left">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Nome Completo</label>
-                      <input 
-                        type="text" 
-                        required
-                        autoFocus
-                        value={authName}
-                        onChange={(e) => setAuthName(e.target.value)}
-                        className="w-full bg-gray-50 border-gray-200 border rounded-xl px-4 py-4 text-sm font-bold focus:ring-2 focus:ring-brand-blue focus:bg-white transition-all shadow-inner outline-none"
-                        placeholder="Es. Mario Rossi"
-                      />
+                    {/* Grid per Nome e Cognome */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Nome *</label>
+                        <input 
+                          type="text" 
+                          required
+                          autoFocus
+                          value={authFirstName}
+                          onChange={(e) => setAuthFirstName(e.target.value)}
+                          className="w-full bg-gray-50 border-gray-200 border rounded-xl px-4 py-4 text-sm font-bold focus:ring-2 focus:ring-brand-blue focus:bg-white transition-all shadow-inner outline-none"
+                          placeholder="Es. Mario"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Cognome *</label>
+                        <input 
+                          type="text" 
+                          required
+                          value={authLastName}
+                          onChange={(e) => setAuthLastName(e.target.value)}
+                          className="w-full bg-gray-50 border-gray-200 border rounded-xl px-4 py-4 text-sm font-bold focus:ring-2 focus:ring-brand-blue focus:bg-white transition-all shadow-inner outline-none"
+                          placeholder="Es. Rossi"
+                        />
+                      </div>
                     </div>
+
+                    {/* Grid per Provincia e Città */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Provincia</label>
+                        <select
+                          value={authProvince}
+                          onChange={(e) => {
+                            setAuthProvince(e.target.value);
+                            setAuthCity(''); // Reset selected city when province changes
+                          }}
+                          className="w-full bg-gray-50 border-gray-200 border rounded-xl px-4 py-4 text-sm font-bold focus:ring-2 focus:ring-brand-blue focus:bg-white transition-all shadow-inner outline-none cursor-pointer"
+                        >
+                          <option value="">Seleziona...</option>
+                          {uniqueProvinces.map((prov) => (
+                            <option key={prov.nome} value={prov.nome}>
+                              {prov.nome} ({prov.sigla})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Città</label>
+                        {authProvince ? (
+                          <select
+                            value={authCity}
+                            onChange={(e) => setAuthCity(e.target.value)}
+                            required
+                            className="w-full bg-gray-50 border-gray-200 border rounded-xl px-4 py-4 text-sm font-bold focus:ring-2 focus:ring-brand-blue focus:bg-white transition-all shadow-inner outline-none cursor-pointer"
+                          >
+                            <option value="">Seleziona...</option>
+                            {filteredCities.map((citta) => (
+                              <option key={citta} value={citta}>
+                                {citta}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            disabled
+                            placeholder="Scegli provincia..."
+                            className="w-full bg-gray-100 border-gray-200 border rounded-xl px-4 py-4 text-sm font-bold text-gray-400 outline-none cursor-not-allowed"
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Password con Occhietto */}
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Crea Password</label>
-                      <input 
-                        type="password" 
-                        required
-                        value={authPassword}
-                        onChange={(e) => setAuthPassword(e.target.value)}
-                        className="w-full bg-gray-50 border-gray-200 border rounded-xl px-4 py-4 text-sm font-bold focus:ring-2 focus:ring-brand-blue focus:bg-white transition-all shadow-inner outline-none"
-                        placeholder="Minimo 6 caratteri"
-                      />
+                      <div className="relative">
+                        <input 
+                          type={showAuthPassword ? "text" : "password"} 
+                          required
+                          value={authPassword}
+                          onChange={(e) => setAuthPassword(e.target.value)}
+                          className="w-full bg-gray-50 border-gray-200 border rounded-xl pl-4 pr-12 py-4 text-sm font-bold focus:ring-2 focus:ring-brand-blue focus:bg-white transition-all shadow-inner outline-none"
+                          placeholder="Minimo 6 caratteri"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowAuthPassword(!showAuthPassword)}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                        >
+                          {showAuthPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                        </button>
+                      </div>
                     </div>
+                    
                     <button 
                       type="submit"
                       className="w-full bg-brand-blue hover:bg-brand-dark text-white p-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all hover:shadow-lg shadow-brand-blue/30 active:scale-95 mt-2"
