@@ -250,7 +250,8 @@ export const DEFAULT_COMPANY_SETTINGS = {
   googleAnalyticsId: "",
   googleAnalyticsSnippet: "",
   adsTxtContent: "google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0",
-  customGeminiKey: ""
+  customGeminiKey: "",
+  orderStatusSenderEmail: "noreply@bespoint.it"
 };
 
 export const DEFAULT_PAGE_SETTINGS = {

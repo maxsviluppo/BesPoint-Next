@@ -85,7 +85,41 @@ const MOCK_USERS: Customer[] = [
 ];
 
 export const AdminUsers = ({ onViewOrder, orders = [] }: { onViewOrder?: (orderId: string) => void, orders?: any[] }) => {
-    const [users, setUsers] = useState<Customer[]>(MOCK_USERS);
+    const [users, setUsers] = useState<Customer[]>(() => {
+        if (typeof window === 'undefined') return MOCK_USERS;
+        const stored = localStorage.getItem('bespoint_users');
+        if (!stored) return MOCK_USERS;
+        try {
+            const parsed = JSON.parse(stored);
+            const mappedStored = parsed.map((u: any, idx: number) => {
+                if (MOCK_USERS.some(mu => mu.email.toLowerCase() === u.email.toLowerCase())) {
+                    return null;
+                }
+                const addressParts = [u.addressStreet, u.addressZip, u.addressCity, u.addressProvince].filter(Boolean);
+                return {
+                    id: u.id || `USR-${100 + idx}`,
+                    name: u.name || `${u.firstName || ''} ${u.lastName || ''}`.trim() || 'Cliente Registrato',
+                    email: u.email,
+                    phone: u.phone || '-',
+                    address: addressParts.join(', ') || '-',
+                    joinDate: u.joinDate || new Date().toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' }),
+                    totalOrders: u.totalOrders || 0,
+                    totalSpent: u.totalSpent || 0,
+                    totalReturns: u.totalReturns || 0,
+                    lastActive: u.lastActive || 'Oggi',
+                    status: u.status || 'active',
+                    avatar: u.avatar || `https://i.pravatar.cc/150?u=${encodeURIComponent(u.email)}`,
+                    history: u.history || [],
+                    notes: u.notes || 'Nuovo utente registrato via web.'
+                } as Customer;
+            }).filter(Boolean) as Customer[];
+            
+            return [...MOCK_USERS, ...mappedStored];
+        } catch (e) {
+            console.error("Error parsing stored users", e);
+            return MOCK_USERS;
+        }
+    });
     const [selectedUser, setSelectedUser] = useState<Customer | null>(null);
     const [search, setSearch] = useState("");
     const [filter, setFilter] = useState("all");

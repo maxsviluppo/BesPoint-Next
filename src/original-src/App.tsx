@@ -1130,7 +1130,9 @@ const CheckoutSheet = ({
   setAppOrders,
   setCart,
   companySettings,
-  addToast
+  addToast,
+  comuniList,
+  setCurrentUser
 }: { 
   items: CartItem[]; 
   onClose: () => void; 
@@ -1142,6 +1144,8 @@ const CheckoutSheet = ({
   setCart: (cart: any[]) => void;
   companySettings: any;
   addToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+  comuniList: any[];
+  setCurrentUser: (user: any) => void;
 }) => {
   const [shippingForm, setShippingForm] = useState({
     name: currentUser?.name || '',
@@ -1155,6 +1159,25 @@ const CheckoutSheet = ({
     isCustomCity: false
   });
 
+  const uniqueProvinces = useMemo(() => {
+    const provincesMap = new Map<string, string>();
+    comuniList.forEach(c => {
+      if (c.provincia?.nome) {
+        provincesMap.set(c.provincia.nome, c.sigla);
+      }
+    });
+    return Array.from(provincesMap.entries()).map(([nome, sigla]) => ({ nome, sigla })).sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [comuniList]);
+
+  const filteredCities = useMemo(() => {
+    if (!shippingForm.province) return [];
+    return comuniList
+      .filter(c => c.sigla === shippingForm.province || c.provincia?.nome === shippingForm.province)
+      .map(c => c.nome)
+      .sort((a, b) => a.localeCompare(b));
+  }, [shippingForm.province, comuniList]);
+
+  const [useProfileAddress, setUseProfileAddress] = useState(true);
   const [orderId] = useState(() => `BP-${new Date().getFullYear()}-${Math.floor(Math.random() * 899 + 100)}`);
 
   const [step, setStep] = useState<'shipping' | 'methods' | 'details' | 'success'>(
@@ -1166,25 +1189,50 @@ const CheckoutSheet = ({
 
   useEffect(() => {
     if (currentUser) {
-      setShippingForm(prev => ({
-        ...prev,
-        name: currentUser.name || prev.name,
-        email: currentUser.email || prev.email,
-        phone: currentUser.phone || prev.phone,
-        street: currentUser.addressStreet || prev.street,
-        city: currentUser.addressCity || prev.city,
-        zip: currentUser.addressZip || prev.zip,
-        province: currentUser.addressProvince || prev.province,
-        isCustomCity: currentUser.addressCity && !PREDEFINED_CITIES.includes(currentUser.addressCity)
-      }));
-      
-      // Auto-advance to Step 2 if address info is already complete
-      if (currentUser.addressStreet && currentUser.addressCity && step === 'shipping') {
-        setStep('methods');
-        addToast("Bentornato! Abbiamo pre-compilato i tuoi dati di spedizione.", "success");
+      const getProvinceName = (val: string) => {
+        if (!val) return '';
+        if (val.length === 2) {
+          const match = comuniList.find(c => c.sigla === val.toUpperCase());
+          return match?.provincia?.nome || val;
+        }
+        return val;
+      };
+
+      if (useProfileAddress) {
+        setShippingForm(prev => ({
+          ...prev,
+          name: currentUser.name || prev.name,
+          email: currentUser.email || prev.email,
+          phone: currentUser.phone || prev.phone,
+          street: currentUser.addressStreet || prev.street,
+          city: currentUser.addressCity || prev.city,
+          zip: currentUser.addressZip || prev.zip,
+          province: getProvinceName(currentUser.addressProvince || prev.province),
+          isCustomCity: currentUser.addressCity && !PREDEFINED_CITIES.includes(currentUser.addressCity)
+        }));
+      } else {
+        setShippingForm(prev => ({
+          ...prev,
+          name: currentUser.shippingName || prev.name || '',
+          email: currentUser.email || prev.email || '',
+          phone: currentUser.shippingPhone || prev.phone || '',
+          street: currentUser.shippingStreet || prev.street || '',
+          city: currentUser.shippingCity || prev.city || '',
+          zip: currentUser.shippingZip || prev.zip || '',
+          province: getProvinceName(currentUser.shippingProvince || prev.province || ''),
+          isCustomCity: currentUser.shippingCity && !PREDEFINED_CITIES.includes(currentUser.shippingCity)
+        }));
       }
     }
-  }, [currentUser, step]);
+  }, [currentUser, useProfileAddress, comuniList]);
+
+  // Run auto-advance only once when component mounts or step changes initially if profile is ready
+  useEffect(() => {
+    if (currentUser && currentUser.addressStreet && currentUser.addressCity && step === 'shipping') {
+      setStep('methods');
+      addToast("Bentornato! Abbiamo pre-compilato i tuoi dati di spedizione.", "success");
+    }
+  }, [currentUser]);
 
   const handleConfirmOrder = () => {
     if (!currentUser) {
@@ -1194,6 +1242,41 @@ const CheckoutSheet = ({
     
     setIsProcessing(true);
     
+    // Aggiorna e memorizza i dati del cliente nella scheda
+    let updatedUser = { ...currentUser };
+    if (useProfileAddress) {
+      updatedUser = {
+        ...updatedUser,
+        name: shippingForm.name || currentUser.name,
+        phone: shippingForm.phone || currentUser.phone,
+        addressStreet: shippingForm.street,
+        addressCity: shippingForm.city,
+        addressZip: shippingForm.zip,
+        addressProvince: shippingForm.province
+      };
+    } else {
+      updatedUser = {
+        ...updatedUser,
+        shippingName: shippingForm.name,
+        shippingPhone: shippingForm.phone,
+        shippingStreet: shippingForm.street,
+        shippingCity: shippingForm.city,
+        shippingZip: shippingForm.zip,
+        shippingProvince: shippingForm.province
+      };
+    }
+    
+    setCurrentUser(updatedUser);
+    localStorage.setItem('bespoint_current_user', JSON.stringify(updatedUser));
+    
+    try {
+      const users = JSON.parse(localStorage.getItem('bespoint_users') || '[]');
+      const updatedUsers = users.map((u: any) => u.email === updatedUser.email ? updatedUser : u);
+      localStorage.setItem('bespoint_users', JSON.stringify(updatedUsers));
+    } catch (e) {
+      console.error("Error saving users to mock db:", e);
+    }
+
     // Simula tempo di transazione
     setTimeout(() => {
       const newOrder = {
@@ -1344,7 +1427,10 @@ const CheckoutSheet = ({
   <!-- TOTALI -->
   <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;margin-top:16px;padding-top:12px;border-top:2px solid #f0f0f0;">
     <div style="display:flex;justify-content:space-between;width:200px;font-size:10px;color:#888;">
-      <span>Subtotale</span><span style="color:#0a0a0a;font-weight:700;">&euro;${total.toFixed(2)}</span>
+      <span>Imponibile</span><span style="color:#0a0a0a;font-weight:700;">&euro;${(total / 1.22).toFixed(2)}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;width:200px;font-size:10px;color:#888;">
+      <span>IVA (22% Inclusa)</span><span style="color:#0a0a0a;font-weight:700;">&euro;${(total - (total / 1.22)).toFixed(2)}</span>
     </div>
     <div style="display:flex;justify-content:space-between;width:200px;font-size:10px;color:#16a34a;font-weight:700;">
       <span>Spedizione</span><span>&euro;0,00</span>
@@ -1485,7 +1571,7 @@ const CheckoutSheet = ({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
+                 <div className="md:col-span-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Email di Contatto</label>
                   <input 
                     type="email" 
@@ -1496,8 +1582,33 @@ const CheckoutSheet = ({
                   />
                   <p className="text-[9px] text-gray-400 font-bold uppercase mt-1">L'email dell'account è preimpostata, puoi modificarla per la spedizione</p>
                 </div>
+                <div className="md:col-span-2 bg-gray-50/50 p-4 rounded-2xl border border-gray-100 space-y-3">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 block">Opzioni di Spedizione</span>
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <label className="flex items-center gap-3 cursor-pointer select-none">
+                      <input 
+                        type="radio" 
+                        name="shippingAddressOption" 
+                        checked={useProfileAddress}
+                        onChange={() => setUseProfileAddress(true)}
+                        className="w-4 h-4 text-brand-yellow focus:ring-brand-yellow"
+                      />
+                      <span className="text-xs font-bold text-brand-dark">Coincide con i dati di profilo / fatturazione</span>
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer select-none">
+                      <input 
+                        type="radio" 
+                        name="shippingAddressOption" 
+                        checked={!useProfileAddress}
+                        onChange={() => setUseProfileAddress(false)}
+                        className="w-4 h-4 text-brand-yellow focus:ring-brand-yellow"
+                      />
+                      <span className="text-xs font-bold text-brand-dark">Spedisci a un altro indirizzo</span>
+                    </label>
+                  </div>
+                </div>
                 <div className="md:col-span-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Nome Completo</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Nome Completo *</label>
                   <input 
                     type="text" 
                     value={shippingForm.name}
@@ -1507,7 +1618,7 @@ const CheckoutSheet = ({
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Indirizzo e Numero Civico</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Indirizzo e Numero Civico *</label>
                   <input 
                     type="text" 
                     value={shippingForm.street}
@@ -1517,25 +1628,56 @@ const CheckoutSheet = ({
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Città</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Provincia *</label>
+                  <select 
+                    value={shippingForm.province}
+                    onChange={e => {
+                      setShippingForm({
+                        ...shippingForm,
+                        province: e.target.value,
+                        city: '',
+                        isCustomCity: false
+                      });
+                    }}
+                    className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-yellow transition-all cursor-pointer"
+                  >
+                    <option value="">Seleziona...</option>
+                    {uniqueProvinces.map((prov) => (
+                      <option key={prov.nome} value={prov.nome}>
+                        {prov.nome} ({prov.sigla})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Città *</label>
                   {!shippingForm.isCustomCity ? (
-                    <select 
-                      value={shippingForm.city}
-                      onChange={e => {
-                        if (e.target.value === "CUSTOM") {
-                          setShippingForm({...shippingForm, isCustomCity: true, city: ""});
-                        } else {
-                          setShippingForm({...shippingForm, city: e.target.value});
-                        }
-                      }}
-                      className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-yellow transition-all cursor-pointer"
-                    >
-                      <option value="">Seleziona...</option>
-                      {PREDEFINED_CITIES.map(c => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                      <option value="CUSTOM">-- Altra città (inserimento manuale) --</option>
-                    </select>
+                    shippingForm.province ? (
+                      <select 
+                        value={shippingForm.city}
+                        onChange={e => {
+                          if (e.target.value === "CUSTOM") {
+                            setShippingForm({...shippingForm, isCustomCity: true, city: ""});
+                          } else {
+                            setShippingForm({...shippingForm, city: e.target.value});
+                          }
+                        }}
+                        className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-yellow transition-all cursor-pointer"
+                      >
+                        <option value="">Seleziona...</option>
+                        {filteredCities.map((citta) => (
+                          <option key={citta} value={citta}>{citta}</option>
+                        ))}
+                        <option value="CUSTOM">-- Altra città (inserimento manuale) --</option>
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        disabled
+                        placeholder="Scegli provincia..."
+                        className="w-full bg-gray-100 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold text-gray-400 outline-none cursor-not-allowed"
+                      />
+                    )
                   ) : (
                     <div className="relative">
                       <input 
@@ -1546,6 +1688,7 @@ const CheckoutSheet = ({
                         className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-yellow transition-all"
                       />
                       <button 
+                        type="button"
                         onClick={() => setShippingForm({...shippingForm, isCustomCity: false, city: ""})}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-black uppercase text-brand-blue"
                       >
@@ -1555,20 +1698,7 @@ const CheckoutSheet = ({
                   )}
                 </div>
                 <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Provincia</label>
-                  <select 
-                    value={shippingForm.province}
-                    onChange={e => setShippingForm({...shippingForm, province: e.target.value})}
-                    className="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-yellow transition-all cursor-pointer"
-                  >
-                    <option value="">Seleziona...</option>
-                    {ITALIAN_PROVINCES.map(p => (
-                      <option key={p.code} value={p.code}>{p.code} - {p.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">CAP</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">CAP *</label>
                   <input 
                     type="text" 
                     value={shippingForm.zip}
@@ -1578,7 +1708,7 @@ const CheckoutSheet = ({
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Cellulare / WhatsApp</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Cellulare / WhatsApp *</label>
                   <input 
                     type="tel" 
                     value={shippingForm.phone}
@@ -1787,7 +1917,10 @@ const CheckoutSheet = ({
                 {/* ── TOTALI ── */}
                 <div className="flex flex-col items-end gap-1.5 pt-3 border-t border-gray-100">
                   <div className="flex justify-between w-56 text-[10px] font-bold text-gray-400 uppercase">
-                    <span>Subtotale</span><span className="text-brand-dark">€{total.toFixed(2)}</span>
+                    <span>Imponibile</span><span className="text-brand-dark">€{(total / 1.22).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between w-56 text-[10px] font-bold text-gray-400 uppercase">
+                    <span>IVA (22% Inclusa)</span><span className="text-brand-dark">€{(total - (total / 1.22)).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between w-56 text-[10px] font-bold text-green-600 uppercase">
                     <span>Spedizione</span><span className="font-black">€0,00</span>
@@ -1853,7 +1986,7 @@ const CheckoutSheet = ({
               </div>
           ) : step === 'shipping' ? (
             <button 
-              disabled={!shippingForm.street || !shippingForm.city || !shippingForm.province || !shippingForm.phone}
+              disabled={!shippingForm.name || !shippingForm.street || !shippingForm.city || !shippingForm.zip || !shippingForm.province || !shippingForm.phone}
               onClick={() => setStep('methods')}
               className="w-full h-16 rounded-2xl bg-brand-dark text-brand-yellow font-black text-sm uppercase tracking-widest transition-all shadow-xl shadow-brand-dark/20 hover:bg-black disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed"
             >
@@ -3715,6 +3848,8 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
             setCart={setCart}
             companySettings={companySettings}
             addToast={addToast}
+            comuniList={comuniList}
+            setCurrentUser={setCurrentUser}
           />
         )}
       </AnimatePresence>
@@ -4221,6 +4356,16 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                             value={companySettings.email}
                             onChange={(e) => setCompanySettings({...companySettings, email: e.target.value})}
                             className="mt-1 block w-full bg-gray-50 border-gray-200 rounded-xl px-4 py-3 text-base font-bold focus:ring-brand-yellow focus:border-brand-yellow"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-black uppercase tracking-widest text-brand-blue">Email Mittente Stato Ordine</span>
+                          <input 
+                            type="email" 
+                            value={companySettings.orderStatusSenderEmail || ''}
+                            onChange={(e) => setCompanySettings({...companySettings, orderStatusSenderEmail: e.target.value})}
+                            className="mt-1 block w-full bg-gray-50 border-gray-200 rounded-xl px-4 py-3 text-base font-bold focus:ring-brand-yellow focus:border-brand-yellow"
+                            placeholder="es. ordini@iltuosito.it"
                           />
                         </label>
                       </div>
@@ -7743,7 +7888,7 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                 <button onClick={() => setActiveUserView('returns')} className="text-xs font-black text-brand-blue uppercase tracking-widest border-b-2 border-brand-blue hover:text-brand-dark hover:border-brand-dark transition-all">Indietro</button>
                               </div>
                               
-                              <p className="text-sm font-bold text-gray-500 leading-relaxed italic border-l-4 border-brand-yellow pl-4">Seleziona un prodotto dai tuoi ordini consegnati per avviare la procedura. Hai 20 giorni dalla spedizione.</p>
+                              <p className="text-sm font-bold text-gray-500 leading-relaxed italic border-l-4 border-brand-yellow pl-4">Seleziona un prodotto dai tuoi ordini consegnati per avviare la procedura. Hai 2 anni per richiedere il reso.</p>
 
                               <div className="space-y-8 mt-8">
                                 {orders.filter(o => o.status === 'delivered' && (o.email === currentUser?.email || currentUser?.email === 'marco.rossi@example.com')).length > 0 ? (
@@ -7765,6 +7910,11 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                       <div className="space-y-4">
                                          {order.items.map(item => {
                                            const isItemReturning = returnRequests.some(r => r.orderId === order.id && r.product.id === item.id);
+                                           const oDate = parseOrderDate(order.date);
+                                           const n = new Date();
+                                           const diff = n.getTime() - oDate.getTime();
+                                           const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                                           const isExpired = days > 730;
                                            return (
                                              <div key={item.id} className={`bg-white p-6 rounded-[2.5rem] border border-gray-100 flex items-center gap-6 transition-all shadow-sm ${isItemReturning ? 'opacity-80 grayscale' : 'hover:shadow-xl'}`}>
                                                <div className="w-20 h-20 bg-gray-50 rounded-2xl border border-gray-50 p-2 shrink-0 overflow-hidden">
@@ -7779,11 +7929,16 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                                     <CheckCircle2 className="w-3 h-3 text-green-500" />
                                                     Richiesta Attiva
                                                   </div>
+                                               ) : isExpired ? (
+                                                  <div className="bg-gray-50 text-red-500/80 px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest border border-red-100 cursor-default flex items-center gap-2">
+                                                    Reso Scaduto
+                                                  </div>
                                                ) : (
                                                   <button 
                                                     onClick={() => {
                                                       setSelectedReturnOrder(order);
                                                       setSelectedReturnItem(item);
+                                                      setReturnQty(1);
                                                       setActiveUserView('return_form');
                                                     }}
                                                     className="bg-brand-yellow hover:bg-brand-orange text-brand-dark px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all active:scale-95 shadow-lg shadow-brand-yellow/20"
@@ -7828,33 +7983,31 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                               </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                  {selectedReturnItem.qty > 1 && (
-                                    <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-4">
-                                      <label className="text-[10px] font-black text-brand-blue uppercase tracking-widest block ml-1">Quantità da Rendere</label>
-                                      <div className="flex items-center gap-6">
-                                        <button 
-                                          onClick={() => setReturnQty(Math.max(1, returnQty - 1))}
-                                          className="w-12 h-12 bg-gray-50 border-2 border-gray-100 rounded-2xl flex items-center justify-center font-black text-brand-dark hover:border-brand-yellow hover:bg-white transition-all shadow-sm"
-                                        >
-                                          -
-                                        </button>
-                                        <div className="flex flex-col items-center">
-                                          <span className="text-2xl font-black text-brand-dark">{returnQty}</span>
-                                          <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">Articoli</span>
-                                        </div>
-                                        <button 
-                                          onClick={() => setReturnQty(Math.min(selectedReturnItem.qty, returnQty + 1))}
-                                          className="w-12 h-12 bg-gray-50 border-2 border-gray-100 rounded-2xl flex items-center justify-center font-black text-brand-dark hover:border-brand-yellow hover:bg-white transition-all shadow-sm"
-                                        >
-                                          +
-                                        </button>
+                                  <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-4">
+                                    <label className="text-[10px] font-black text-brand-blue uppercase tracking-widest block ml-1">Quantità da Rendere</label>
+                                    <div className="flex items-center gap-6">
+                                      <button 
+                                        onClick={() => setReturnQty(Math.max(1, returnQty - 1))}
+                                        className="w-12 h-12 bg-gray-50 border-2 border-gray-100 rounded-2xl flex items-center justify-center font-black text-brand-dark hover:border-brand-yellow hover:bg-white transition-all shadow-sm"
+                                      >
+                                        -
+                                      </button>
+                                      <div className="flex flex-col items-center">
+                                        <span className="text-2xl font-black text-brand-dark">{returnQty}</span>
+                                        <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">Articoli</span>
                                       </div>
-                                      <p className="text-[10px] font-bold text-gray-400 italic">Disponibili nell'ordine: {selectedReturnItem.qty}</p>
+                                      <button 
+                                        onClick={() => setReturnQty(Math.min(selectedReturnItem.qty, returnQty + 1))}
+                                        className="w-12 h-12 bg-gray-50 border-2 border-gray-100 rounded-2xl flex items-center justify-center font-black text-brand-dark hover:border-brand-yellow hover:bg-white transition-all shadow-sm"
+                                      >
+                                        +
+                                      </button>
                                     </div>
-                                  )}
+                                    <p className="text-[10px] font-bold text-gray-400 italic">Disponibili nell'ordine: {selectedReturnItem.qty}</p>
+                                  </div>
 
-                                  <div className={`bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-4 ${selectedReturnItem.qty <= 1 ? 'col-span-2' : ''}`}>
-                                    <label className="text-[10px] font-black text-brand-blue uppercase tracking-widest block ml-1">Documentazione Fotografica (Opzionale)</label>
+                                  <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-4">
+                                    <label className="text-[10px] font-black text-brand-blue uppercase tracking-widest block ml-1">Documentazione Fotografica (Obbligatoria - 3 Foto)</label>
                                     <div className="flex flex-wrap gap-3">
                                       {returnPhotos.map((photo, i) => (
                                         <div key={i} className="relative w-16 h-16 rounded-xl overflow-hidden border border-gray-100 shadow-sm group">
@@ -7868,9 +8021,9 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                         </div>
                                       ))}
                                       {returnPhotos.length < 3 && (
-                                        <label className="w-16 h-16 rounded-xl border-2 border-dashed border-gray-100 flex flex-col items-center justify-center cursor-pointer hover:border-brand-yellow hover:bg-brand-yellow/5 transition-all text-gray-300 hover:text-brand-yellow">
-                                          <Camera className="w-6 h-6 mb-1" />
-                                          <span className="text-[8px] font-black uppercase">Carica</span>
+                                        <label className="w-16 h-16 rounded-xl border-2 border-dashed border-red-200 flex flex-col items-center justify-center cursor-pointer hover:border-brand-yellow hover:bg-brand-yellow/5 transition-all text-gray-300 hover:text-brand-yellow bg-red-50/10">
+                                          <Camera className="w-6 h-6 mb-1 text-red-400" />
+                                          <span className="text-[8px] font-black uppercase text-red-500">Carica</span>
                                           <input 
                                             type="file" 
                                             accept="image/*" 
@@ -7880,7 +8033,7 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                         </label>
                                       )}
                                     </div>
-                                    <p className="text-[9px] font-bold text-gray-400 italic">Massimo 3 foto. Utile per segnalare danni o difetti.</p>
+                                    <p className="text-[9px] font-bold text-red-500 italic">Per inviare la richiesta devi caricare esattamente 3 foto del prodotto.</p>
                                   </div>
                                 </div>
 
@@ -7895,6 +8048,7 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                 </div>
                                 <button 
                                   onClick={() => {
+                                    if (returnPhotos.length < 3) { addToast("Carica esattamente 3 foto per procedere con il reso!", "error"); return; }
                                     if (!returnReason.trim()) { addToast("Indica la motivazione prima di inviare!", "info"); return; }
                                     setIsReturnSubmitting(true);
                                     setTimeout(() => {
@@ -7928,7 +8082,7 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                       addToast("La tua richiesta di reso per questo prodotto è stata inviata con successo.", "success");
                                     }, 1000);
                                   }}
-                                  disabled={isReturnSubmitting}
+                                  disabled={isReturnSubmitting || returnPhotos.length < 3}
                                   className="w-full bg-brand-dark text-white p-5 rounded-2xl font-black uppercase text-xs tracking-widest transition-all shadow-lg active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50"
                                 >
                                   {isReturnSubmitting ? (
@@ -7937,7 +8091,9 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                       Inviando...
                                     </>
                                   ) : (
-                                    "Invia Richiesta di Rimborso Prodotto"
+                                    returnPhotos.length < 3 
+                                      ? `Carica altre ${3 - returnPhotos.length} foto per procedere`
+                                      : "Invia Richiesta di Rimborso Prodotto"
                                   )}
                                 </button>
                               </div>
@@ -8116,7 +8272,7 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                         </div>
                                         <div className="flex-1 min-w-0 text-left">
                                           <p className="text-xs font-bold text-brand-dark truncate">{item.name}</p>
-                                          <p className="text-[10px] text-gray-400 font-bold uppercase">Qt. {item.qty} &bull; €{item.price.toFixed(2)}</p>
+                                      <p className="text-[10px] text-gray-400 font-bold uppercase">Qt. {item.qty} &bull; €{item.price.toFixed(2)}</p>
                                         </div>
                                         {order.status === 'delivered' && (
                                           <div className="flex gap-2">
@@ -8127,7 +8283,7 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                               const n = new Date();
                                               const diff = n.getTime() - oDate.getTime();
                                               const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-                                              const isExpired = days > 20;
+                                              const isExpired = days > 730;
                                               const isReturnActive = !!request;
                                               
                                               let returnLabel = 'Reso';
@@ -8173,6 +8329,7 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                                       onClick={() => {
                                                         setSelectedReturnOrder(order);
                                                         setSelectedReturnItem(item);
+                                                        setReturnQty(1);
                                                         setActiveUserView('return_form');
                                                         setAuthStep('profile');
                                                       }}
@@ -8200,13 +8357,21 @@ export default function App({ hideStorefront = false }: { hideStorefront?: boole
                                     <div className="mt-4 pt-4 border-t border-gray-50 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs bg-gray-50/50 rounded-2xl p-4 animate-in fade-in slide-in-from-top-2 duration-300">
                                       <div className="space-y-2">
                                         <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest flex items-center gap-1.5">
+                                          <User className="w-3.5 h-3.5 text-brand-blue" /> Destinatario
+                                        </p>
+                                        <p className="font-bold text-brand-dark leading-relaxed pl-5">
+                                          {order.customer}
+                                        </p>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest flex items-center gap-1.5">
                                           <MapPin className="w-3.5 h-3.5 text-brand-blue" /> Indirizzo di Spedizione
                                         </p>
                                         <p className="font-bold text-brand-dark leading-relaxed pl-5">
                                           {order.address}
                                         </p>
                                       </div>
-                                      <div className="space-y-2">
+                                      <div className="space-y-2 md:col-span-2">
                                         <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest flex items-center gap-1.5">
                                           <CreditCard className="w-3.5 h-3.5 text-brand-blue" /> Metodo di Pagamento
                                         </p>

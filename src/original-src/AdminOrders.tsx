@@ -31,6 +31,32 @@ import {
   Layers
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { PRODUCTS } from "./data";
+
+const getProductWeight = (productId: string): number => {
+  const prod = PRODUCTS.find(p => String(p.id) === String(productId));
+  if (!prod) return 0.1;
+  if (typeof prod.weight === 'number') return prod.weight;
+  if (prod.specs && prod.specs["Peso"]) {
+    const parsed = parseFloat(prod.specs["Peso"]);
+    if (!isNaN(parsed)) return parsed;
+  }
+  return 0.1;
+};
+
+const getOrderWeight = (order: any): number => {
+  if (typeof order.weight === 'number') return order.weight;
+  if (typeof order.totalWeight === 'number') return order.totalWeight;
+  
+  if (Array.isArray(order.items) && order.items.length > 0) {
+    return order.items.reduce((sum: number, item: any) => {
+      const itemQty = Number(item.qty) || 1;
+      const itemWeight = getProductWeight(item.id);
+      return sum + (itemWeight * itemQty);
+    }, 0);
+  }
+  return 0.5;
+};
 
 const COURIERS = [
   { id: 'gls', name: 'GLS Italy', logo: 'gls' },
@@ -100,6 +126,7 @@ export const AdminOrders = ({
   const [endDate, setEndDate] = useState("");
   const [channelFilter, setChannelFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState("all");
+  const [activeFilterDropdown, setActiveFilterDropdown] = useState<"channel" | "payment" | null>(null);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [trackingModalOrder, setTrackingModalOrder] = useState<any | null>(null);
   const [tempTrackingId, setTempTrackingId] = useState("");
@@ -132,6 +159,8 @@ export const AdminOrders = ({
   };
 
   const selectedOrder = orders.find(o => o.id === selectedOrderId);
+  const isSelectedBankTransfer = selectedOrder ? (selectedOrder.payment?.toLowerCase().includes('bonifico') || selectedOrder.paymentType === 'bank') : false;
+  const isLockedSidebar = selectedOrder ? (isSelectedBankTransfer && !selectedOrder.isPaid) : false;
 
   const handleStatusChange = (order: any, newStatus: string) => {
     if (newStatus === 'shipped') {
@@ -160,16 +189,51 @@ export const AdminOrders = ({
     setIsUpdatingStatus(true);
     setUpdatingOrderId(orderId);
     
-    setTimeout(() => {
+    setTimeout(async () => {
+      // Trova l'ordine per recuperare i dettagli del cliente prima di aggiornarlo
+      const order = orders.find(o => o.id === orderId);
+      
       setOrders(prev => prev.map(o => o.id === orderId 
         ? { ...o, status: newStatus, ...extraData } : o));
       setIsUpdatingStatus(false);
       setUpdatingOrderId(null);
+
+      if (order) {
+        // Chiamata all'API di invio email per notificare il cliente
+        try {
+          // Recuperiamo le impostazioni aziendali per l'email del mittente
+          const savedSettings = localStorage.getItem('companySettings');
+          const companySettings = savedSettings ? JSON.parse(savedSettings) : {};
+          const senderEmail = companySettings.orderStatusSenderEmail || companySettings.email || 'noreply@bespoint.it';
+
+          const res = await fetch('/api/send-status-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              senderEmail,
+              customerEmail: order.email,
+              customerName: order.customer,
+              orderId: order.id,
+              status: newStatus,
+              trackingId: extraData.trackingId || order.trackingId,
+              carrier: extraData.carrierId || order.carrierId
+            })
+          });
+          const data = await res.json();
+          console.log('[API Send Email Response]', data);
+        } catch (err) {
+          console.error('[Error sending status email]', err);
+        }
+      }
     }, 800);
   };
 
   const updateTrackingId = (orderId: string, trackingId: string) => {
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, trackingId } : o));
+  };
+
+  const togglePaidStatus = (orderId: string) => {
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, isPaid: !o.isPaid } : o));
   };
 
   const updateOrderCarrier = (orderId: string, carrierId: string) => {
@@ -217,6 +281,7 @@ export const AdminOrders = ({
             <strong style="font-size:12px;color:#0a0a0a;">${item.name}</strong>
             <div style="font-size:9px;color:#aaa;text-transform:uppercase;letter-spacing:1px;">SKU-${String(item.id).padStart(4,'0')}</div>
           </td>
+          <td style="padding:8px 4px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;color:#555;">${getProductWeight(item.id).toFixed(2)} kg</td>
           <td style="padding:8px 4px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;">&euro;${Number(item.price).toFixed(2)}</td>
           <td style="padding:8px 4px;border-bottom:1px solid #f0f0f0;text-align:center;">
             <span style="background:#f5f5f5;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:900;">${item.qty}</span>
@@ -226,7 +291,7 @@ export const AdminOrders = ({
       `).join('');
 
       const emptyRow = items.length === 0
-        ? '<tr><td colspan="5" style="padding:24px;text-align:center;color:#aaa;font-size:11px;">Dettaglio prodotti non disponibile</td></tr>'
+        ? '<tr><td colspan="6" style="padding:24px;text-align:center;color:#aaa;font-size:11px;">Dettaglio prodotti non disponibile</td></tr>'
         : '';
 
       const courierName = COURIERS.find(c => c.id === order.carrierId)?.name || '—';
@@ -276,10 +341,16 @@ export const AdminOrders = ({
       <div style="font-size:8px;color:#888;text-transform:uppercase;letter-spacing:1px;">Metodo di Pagamento</div>
       <div style="font-weight:900;font-size:13px;color:#ffd600;margin-top:4px;">${order.payment || '—'}</div>
     </div>
-    <div style="background:#f8fafc;border:1px solid #eee;border-radius:8px;padding:10px 16px;">
-      <div style="font-size:8px;color:#888;text-transform:uppercase;letter-spacing:1px;">Corriere</div>
-      <div style="font-weight:900;font-size:13px;color:#0a0a0a;margin-top:4px;">${courierName}</div>
-      ${order.trackingId ? `<div style="font-size:9px;color:#2563eb;font-weight:700;margin-top:2px;">Track: ${order.trackingId}</div>` : ''}
+    <div style="background:#f8fafc;border:1px solid #eee;border-radius:8px;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <div style="font-size:8px;color:#888;text-transform:uppercase;letter-spacing:1px;">Corriere</div>
+        <div style="font-weight:900;font-size:13px;color:#0a0a0a;margin-top:4px;">${courierName}</div>
+        ${order.trackingId ? `<div style="font-size:9px;color:#2563eb;font-weight:700;margin-top:2px;">Track: ${order.trackingId}</div>` : ''}
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:8px;color:#888;text-transform:uppercase;letter-spacing:1px;">Peso + Imballo (Kg)</div>
+        <div style="font-weight:900;font-size:14px;color:#2563eb;margin-top:4px;">${getOrderWeight(order).toFixed(2)} kg</div>
+      </div>
     </div>
   </div>
 
@@ -288,6 +359,7 @@ export const AdminOrders = ({
     <thead><tr style="background:#f5f5f5;">
       <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;width:44px;"></th>
       <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;text-align:left;">Articolo</th>
+      <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;text-align:center;">Peso + Imballo (Kg)</th>
       <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;text-align:center;">Prezzo</th>
       <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;text-align:center;">Qt</th>
       <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;text-align:right;">Totale</th>
@@ -302,6 +374,9 @@ export const AdminOrders = ({
     </div>
     <div style="display:flex;justify-content:space-between;width:200px;font-size:10px;color:#16a34a;font-weight:700;">
       <span>Spedizione</span><span>&euro;0,00</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;width:200px;font-size:10px;color:#2563eb;font-weight:700;">
+      <span>Peso Totale</span><span>${getOrderWeight(order).toFixed(2)} kg</span>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;width:220px;background:#ffd600;padding:10px 16px;border-radius:10px;margin-top:4px;">
       <span style="font-weight:900;font-size:10px;text-transform:uppercase;letter-spacing:1px;">Totale Ordine</span>
@@ -435,6 +510,7 @@ export const AdminOrders = ({
           <strong style="font-size:12px;color:#0a0a0a;">${item.name}</strong>
           <div style="font-size:9px;color:#aaa;text-transform:uppercase;letter-spacing:1px;">SKU-${String(item.id).padStart(4,'0')}</div>
         </td>
+        <td style="padding:8px 4px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;color:#555;">${getProductWeight(item.id).toFixed(2)} kg</td>
         <td style="padding:8px 4px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;">€${Number(item.price).toFixed(2)}</td>
         <td style="padding:8px 4px;border-bottom:1px solid #f0f0f0;text-align:center;">
           <span style="background:#f5f5f5;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:900;">${item.qty}</span>
@@ -444,7 +520,7 @@ export const AdminOrders = ({
     `).join('');
 
     const emptyItemsHTML = (order.items || []).length === 0
-      ? `<tr><td colspan="5" style="padding:24px;text-align:center;color:#aaa;font-size:11px;">Dettaglio prodotti non disponibile</td></tr>`
+      ? `<tr><td colspan="6" style="padding:24px;text-align:center;color:#aaa;font-size:11px;">Dettaglio prodotti non disponibile</td></tr>`
       : '';
 
     const courierName = COURIERS.find(c => c.id === order.carrierId)?.name || '—';
@@ -502,10 +578,16 @@ export const AdminOrders = ({
     <div style="font-size:8px;color:#888;text-transform:uppercase;letter-spacing:1px;">Metodo di Pagamento</div>
     <div style="font-weight:900;font-size:13px;color:#ffd600;margin-top:4px;">${order.payment || '—'}</div>
   </div>
-  <div style="background:#f8fafc;border:1px solid #eee;border-radius:8px;padding:10px 16px;">
-    <div style="font-size:8px;color:#888;text-transform:uppercase;letter-spacing:1px;">Corriere</div>
-    <div style="font-weight:900;font-size:13px;color:#0a0a0a;margin-top:4px;">${courierName}</div>
-    ${order.trackingId ? `<div style="font-size:9px;color:#2563eb;font-weight:700;margin-top:2px;">Track: ${order.trackingId}</div>` : ''}
+  <div style="background:#f8fafc;border:1px solid #eee;border-radius:8px;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;">
+    <div>
+      <div style="font-size:8px;color:#888;text-transform:uppercase;letter-spacing:1px;">Corriere</div>
+      <div style="font-weight:900;font-size:13px;color:#0a0a0a;margin-top:4px;">${courierName}</div>
+      ${order.trackingId ? `<div style="font-size:9px;color:#2563eb;font-weight:700;margin-top:2px;">Track: ${order.trackingId}</div>` : ''}
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:8px;color:#888;text-transform:uppercase;letter-spacing:1px;">Peso + Imballo (Kg)</div>
+      <div style="font-weight:900;font-size:14px;color:#2563eb;margin-top:4px;">${getOrderWeight(order).toFixed(2)} kg</div>
+    </div>
   </div>
 </div>
 <!-- PRODOTTI -->
@@ -513,6 +595,7 @@ export const AdminOrders = ({
   <thead><tr style="background:#f5f5f5;">
     <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;width:44px;"></th>
     <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;text-align:left;">Articolo</th>
+    <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;text-align:center;">Peso + Imballo (Kg)</th>
     <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;text-align:center;">Prezzo</th>
     <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;text-align:center;">Qt</th>
     <th style="padding:8px 4px;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;text-align:right;">Totale</th>
@@ -526,6 +609,9 @@ export const AdminOrders = ({
   </div>
   <div style="display:flex;justify-content:space-between;width:200px;font-size:10px;color:#16a34a;font-weight:700;">
     <span>Spedizione</span><span>€0,00</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;width:200px;font-size:10px;color:#2563eb;font-weight:700;">
+    <span>Peso Totale</span><span>${getOrderWeight(order).toFixed(2)} kg</span>
   </div>
   <div style="display:flex;justify-content:space-between;align-items:center;width:220px;background:#ffd600;padding:10px 16px;border-radius:10px;margin-top:4px;">
     <span style="font-weight:900;font-size:10px;text-transform:uppercase;letter-spacing:1px;">Totale Ordine</span>
@@ -552,6 +638,18 @@ export const AdminOrders = ({
       case 'refunded': return "bg-pink-100 text-pink-600 border-pink-200";
       case 'cancelled': return "bg-red-100 text-red-600 border-red-200";
       default: return "bg-gray-100 text-gray-600";
+    }
+  };
+
+  const translateStatus = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'pending': return 'In Attesa';
+      case 'shipped': return 'Spedito';
+      case 'delivered': return 'Consegnato';
+      case 'refunded': return 'Rimborsato';
+      case 'cancelled': return 'Annullato';
+      case 'refund requested': return 'Rimborso Richiesto';
+      default: return status;
     }
   };
 
@@ -689,8 +787,21 @@ export const AdminOrders = ({
               )}
             </button>
             <button onClick={() => {
-                const headers = ["ID", "Data", "Cliente", "Email", "Piattaforma", "Totale", "Stato", "Metodo Pagamento", "Tracking", "Indirizzo"];
-                const rows = filteredOrders.map(o => [o.id, o.date, `"${o.customer}"`, o.email, o.channel, o.total.toFixed(2), o.status, o.payment || "N/A", o.trackingId || "", `"${o.address}"`]);
+                const headers = ["ID", "Data", "Cliente", "Email", "Piattaforma", "Totale", "Stato", "Metodo Pagamento", "Tracking", "Indirizzo Spedizione", "Telefono", "Peso + Imballo (Kg)"];
+                const rows = filteredOrders.map(o => [
+                  o.id, 
+                  o.date, 
+                  `"${o.customer}"`, 
+                  o.email, 
+                  o.channel, 
+                  o.total.toFixed(2), 
+                  o.status, 
+                  o.payment || "N/A", 
+                  o.trackingId || "", 
+                  `"${o.address || ""}"`, 
+                  `"${o.phone || ""}"`, 
+                  `${getOrderWeight(o).toFixed(2)}`
+                ]);
                 const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
                 const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
                 const url = window.URL.createObjectURL(blob);
@@ -730,7 +841,7 @@ export const AdminOrders = ({
                   onClick={() => setFilter(f)}
                   className={`px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === f ? 'bg-brand-dark text-brand-yellow shadow-lg' : 'text-gray-400 hover:text-brand-dark'}`}
                 >
-                  {f}
+                  {f === 'all' ? 'Tutti' : translateStatus(f)}
                 </button>
               ))}
             </div>
@@ -749,98 +860,192 @@ export const AdminOrders = ({
                </button>
              )}
           </div>
-          <div className="flex bg-gray-50 px-5 py-3 rounded-2xl border border-gray-100 items-center hover:border-gray-300 transition-all">
-             <Layers className="w-5 h-5 text-brand-dark mr-2" />
-             <select 
-               value={channelFilter}
-               onChange={(e) => { 
-                 setChannelFilter(e.target.value); 
-                 if (e.target.value !== 'web' && e.target.value !== 'website') setPaymentFilter('all'); 
-               }}
-               className="bg-transparent border-none text-[10px] font-black uppercase tracking-widest focus:ring-0 p-0 cursor-pointer text-brand-dark font-black"
+          <div className="relative">
+             <button 
+               onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'channel' ? null : 'channel')}
+               className="flex bg-gray-50 px-5 py-3 rounded-2xl border border-gray-100 items-center hover:border-gray-300 hover:bg-gray-100/50 transition-all text-[10px] font-black uppercase tracking-widest text-brand-dark cursor-pointer select-none font-black"
              >
-                <option value="all">🌐 Tutti i Canali</option>
-                <option value="web">💻 Sito Web Direct</option>
-                {(pageSettings?.enabledMarketplaces || ["Amazon", "eBay"]).map((m: string) => (
-                   <option key={m} value={m.toLowerCase()}>
-                     {m === "Amazon" ? "📦" : m === "eBay" ? "🛍️" : m === "TikTok" ? "📱" : "🔌"} {m} Market
-                   </option>
-                 ))}
-             </select>
+                <Layers className="w-5 h-5 text-brand-dark mr-2" />
+                <span>
+                  {channelFilter === 'all' && "🌐 Tutti i Canali"}
+                  {channelFilter === 'web' && "💻 Sito Web Direct"}
+                  {channelFilter !== 'all' && channelFilter !== 'web' && (
+                     `${(pageSettings?.enabledMarketplaces || ["Amazon", "eBay"]).find(m => m.toLowerCase() === channelFilter) === "Amazon" ? "📦" : (pageSettings?.enabledMarketplaces || ["Amazon", "eBay"]).find(m => m.toLowerCase() === channelFilter) === "eBay" ? "🛍️" : (pageSettings?.enabledMarketplaces || ["Amazon", "eBay"]).find(m => m.toLowerCase() === channelFilter) === "TikTok" ? "📱" : "🔌"} ${(pageSettings?.enabledMarketplaces || ["Amazon", "eBay"]).find(m => m.toLowerCase() === channelFilter) || channelFilter} Market`
+                  )}
+                </span>
+                <ChevronDown className={`w-4 h-4 ml-2 transition-transform duration-200 ${activeFilterDropdown === 'channel' ? 'rotate-180' : ''}`} />
+             </button>
+             <AnimatePresence>
+                {activeFilterDropdown === 'channel' && (
+                   <>
+                     <div className="fixed inset-0 z-30" onClick={() => setActiveFilterDropdown(null)} />
+                     <motion.div 
+                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                       animate={{ opacity: 1, y: 0, scale: 1 }}
+                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                       transition={{ duration: 0.15 }}
+                       className="absolute top-full left-0 mt-2 min-w-[220px] bg-white border border-gray-100 rounded-2xl shadow-xl z-40 p-2 overflow-hidden flex flex-col"
+                     >
+                        <button 
+                          onClick={() => { setChannelFilter('all'); setActiveFilterDropdown(null); }}
+                          className={`w-full text-left px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${channelFilter === 'all' ? 'bg-brand-yellow text-brand-dark' : 'text-gray-500 hover:bg-gray-50'}`}
+                        >
+                          🌐 Tutti i Canali
+                        </button>
+                        <button 
+                          onClick={() => { setChannelFilter('web'); setActiveFilterDropdown(null); }}
+                          className={`w-full text-left px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${channelFilter === 'web' ? 'bg-brand-yellow text-brand-dark' : 'text-gray-500 hover:bg-gray-50'}`}
+                        >
+                          💻 Sito Web Direct
+                        </button>
+                        {(pageSettings?.enabledMarketplaces || ["Amazon", "eBay"]).map((m: string) => {
+                          const val = m.toLowerCase();
+                          return (
+                            <button 
+                              key={m}
+                              onClick={() => { setChannelFilter(val); setActiveFilterDropdown(null); }}
+                              className={`w-full text-left px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${channelFilter === val ? 'bg-brand-yellow text-brand-dark' : 'text-gray-500 hover:bg-gray-50'}`}
+                            >
+                              {m === "Amazon" ? "📦" : m === "eBay" ? "🛍️" : m === "TikTok" ? "📱" : "🔌"} {m} Market
+                            </button>
+                          );
+                        })}
+                     </motion.div>
+                   </>
+                )}
+             </AnimatePresence>
           </div>
-          <AnimatePresence>
-            {(channelFilter === 'web' || channelFilter === 'website') && (
-              <motion.div initial={{ opacity: 0, scale: 0.9, x: -20 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9, x: -20 }} className="flex bg-brand-yellow/10 px-5 py-3 rounded-2xl border-2 border-brand-yellow/30 items-center shadow-lg shadow-brand-yellow/5">
-                 <CreditCard className="w-5 h-5 text-brand-dark mr-2" />
-                 <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)} className="bg-transparent border-none text-[11px] font-black uppercase tracking-widest focus:ring-0 p-0 cursor-pointer text-brand-dark font-black">
-                    <option value="all">Tutti i Metodi</option>
-                    <option value="bonifico">🏦 Bonifico Bancario</option>
-                    <option value="cod">📦 Contrassegno (COD)</option>
-                    <option value="stripe">💳 Stripe / Carta</option>
-                    <option value="paypal">🅿️ PayPal</option>
-                 </select>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+          <div className="relative">
+             <button 
+               onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'payment' ? null : 'payment')}
+               className="flex bg-gray-50 px-5 py-3 rounded-2xl border border-gray-100 items-center hover:border-gray-300 hover:bg-gray-100/50 transition-all text-[10px] font-black uppercase tracking-widest text-brand-dark cursor-pointer select-none font-black"
+             >
+                <CreditCard className="w-5 h-5 text-brand-dark mr-2" />
+                <span>
+                  {paymentFilter === 'all' && "💳 Tutti i Metodi"}
+                  {paymentFilter === 'bonifico' && "🏦 Bonifico Bancario"}
+                  {paymentFilter === 'cod' && "📦 Contrassegno (COD)"}
+                  {paymentFilter === 'stripe' && "💳 Stripe / Carta"}
+                  {paymentFilter === 'paypal' && "🅿️ PayPal"}
+                </span>
+                <ChevronDown className={`w-4 h-4 ml-2 transition-transform duration-200 ${activeFilterDropdown === 'payment' ? 'rotate-180' : ''}`} />
+             </button>
+             <AnimatePresence>
+                {activeFilterDropdown === 'payment' && (
+                   <>
+                     <div className="fixed inset-0 z-30" onClick={() => setActiveFilterDropdown(null)} />
+                     <motion.div 
+                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                       animate={{ opacity: 1, y: 0, scale: 1 }}
+                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                       transition={{ duration: 0.15 }}
+                       className="absolute top-full left-0 mt-2 min-w-[220px] bg-white border border-gray-100 rounded-2xl shadow-xl z-40 p-2 overflow-hidden flex flex-col"
+                     >
+                        {[
+                          { val: 'all', label: '💳 Tutti i Metodi' },
+                          { val: 'bonifico', label: '🏦 Bonifico Bancario' },
+                          { val: 'cod', label: '📦 Contrassegno (COD)' },
+                          { val: 'stripe', label: '💳 Stripe / Carta' },
+                          { val: 'paypal', label: '🅿️ PayPal' }
+                        ].map((item) => (
+                           <button 
+                             key={item.val}
+                             onClick={() => { setPaymentFilter(item.val); setActiveFilterDropdown(null); }}
+                             className={`w-full text-left px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${paymentFilter === item.val ? 'bg-brand-yellow text-brand-dark' : 'text-gray-500 hover:bg-gray-50'}`}
+                           >
+                             {item.label}
+                           </button>
+                        ))}
+                     </motion.div>
+                   </>
+                )}
+             </AnimatePresence>
+          </div>
+       </div>
       </div>
 
-      <div className="bg-white rounded-[3rem] border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-700">
+      <div className="bg-white rounded-[3rem] border border-gray-100 overflow-visible relative z-10 animate-in fade-in zoom-in-95 duration-700">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-brand-dark text-brand-yellow">
-              <th className="p-5 text-[10px] font-black uppercase tracking-widest pl-10 border-r border-white/5">ID Ordine / Data</th>
+              <th className="p-5 text-[10px] font-black uppercase tracking-widest pl-10 border-r border-white/5 rounded-tl-[2.9rem]">ID Ordine / Data</th>
               <th className="p-5 text-[10px] font-black uppercase tracking-widest border-r border-white/5">Canale</th>
               <th className="p-5 text-[10px] font-black uppercase tracking-widest border-r border-white/5">Cliente</th>
               <th className="p-5 text-[10px] font-black uppercase tracking-widest border-r border-white/5 text-right">Totale</th>
+              <th className="p-5 text-[10px] font-black uppercase tracking-widest border-r border-white/5 text-center">Pagato</th>
               <th className="p-5 text-[10px] font-black uppercase tracking-widest border-r border-white/5 text-center">Stato</th>
-              <th className="p-5"></th>
+              <th className="p-5 rounded-tr-[2.9rem]"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {filteredOrders.map((order) => (
-              <tr key={order.id} className="hover:bg-gray-50/50 transition-colors group">
-                <td className="p-5 pl-10">
-                   <div>
-                     <p className="font-black text-brand-dark text-lg tracking-tighter">{order.id}</p>
-                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{order.date}</p>
-                   </div>
-                </td>
-                <td className="p-5">
-                   <div className="flex items-center gap-3">
-                     <div className="w-10 h-10 rounded-xl bg-white border border-gray-100 flex items-center justify-center group-hover:scale-110 transition-transform">
-                       {getChannelIcon(order.channel)}
+            {filteredOrders.map((order) => {
+              const isBankTransfer = order.payment?.toLowerCase().includes('bonifico') || order.paymentType === 'bank';
+              const isLocked = isBankTransfer && !order.isPaid;
+              return (
+                <tr key={order.id} className={`transition-colors group relative ${order.id === carrierSelectorId ? 'z-30 bg-gray-50/50' : 'hover:z-30 hover:bg-gray-50/50'}`}>
+                  <td className="p-5 pl-10">
+                     <div>
+                       <p className="font-black text-brand-dark text-lg tracking-tighter">{order.id}</p>
+                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{order.date}</p>
                      </div>
-                     <span className="text-xs font-black text-brand-dark uppercase tracking-tight">{order.channel}</span>
-                   </div>
-                </td>
-                <td className="p-5">
-                   <div>
-                     <p className="font-black text-brand-dark text-sm">{order.customer}</p>
-                     <p className="text-xs font-bold text-gray-400">{order.itemsCount} {order.itemsCount > 1 ? 'Articoli' : 'Articolo'}</p>
-                   </div>
-                </td>
-                <td className="p-5 text-right">
-                   <p className="text-lg font-black text-brand-dark">€{order.total.toFixed(2)}</p>
-                </td>
+                  </td>
+                  <td className="p-5">
+                     <div className="flex items-center gap-3">
+                       <div className="w-10 h-10 rounded-xl bg-white border border-gray-100 flex items-center justify-center group-hover:scale-110 transition-transform">
+                         {getChannelIcon(order.channel)}
+                       </div>
+                       <span className="text-xs font-black text-brand-dark uppercase tracking-tight">{order.channel}</span>
+                     </div>
+                  </td>
+                  <td className="p-5">
+                     <div>
+                       <p className="font-black text-brand-dark text-sm">{order.customer}</p>
+                       <p className="text-xs font-bold text-gray-400">{order.itemsCount} {order.itemsCount > 1 ? 'Articoli' : 'Articolo'}</p>
+                     </div>
+                  </td>
+                  <td className="p-5 text-right">
+                     <p className="text-lg font-black text-brand-dark">€{order.total.toFixed(2)}</p>
+                  </td>
+                  <td className="p-5 text-center">
+                     {isBankTransfer ? (
+                       <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                         <input 
+                           type="checkbox" 
+                           checked={!!order.isPaid} 
+                           onChange={() => togglePaidStatus(order.id)} 
+                           className="w-4 h-4 rounded border-gray-300 text-brand-yellow focus:ring-brand-yellow focus:ring-2 transition-all cursor-pointer accent-brand-dark" 
+                         />
+                         <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${order.isPaid ? 'text-green-600' : 'text-orange-500 animate-pulse'}`}>
+                           {order.isPaid ? 'PAGATO' : 'ATTESA'}
+                         </span>
+                       </label>
+                     ) : (
+                       <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest bg-gray-50 px-2.5 py-1.5 rounded-lg border border-gray-100">Automatico</span>
+                     )}
+                  </td>
                   <td className="p-5">
                      <div className="flex items-center justify-center gap-3">
-                       <div className="relative group/status-list">
-                         <button className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border flex items-center gap-2 hover:scale-105 transition-all ${getStatusStyle(order.status)}`}>
-                           {updatingOrderId === order.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : order.status}
-                           <ChevronDown className="w-3 h-3" />
+                       <div className={`relative ${isLocked ? '' : 'group/status-list'}`}>
+                         <button 
+                           disabled={isLocked}
+                           className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border flex items-center gap-2 transition-all ${isLocked ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60' : `hover:scale-105 ${getStatusStyle(order.status)}`}`}
+                         >
+                           {updatingOrderId === order.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : translateStatus(order.status)}
+                           {!isLocked && <ChevronDown className="w-3 h-3" />}
                          </button>
-                         <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 w-32 bg-white rounded-xl border border-gray-100 overflow-hidden opacity-0 invisible group-hover/status-list:opacity-100 group-hover/status-list:visible transition-all z-20 shadow-2xl">
-                            {['pending', 'shipped', 'delivered', 'refunded', 'cancelled', 'refund requested'].map(s => (
-                              <button 
-                                key={s}
-                                onClick={() => handleStatusChange(order, s)}
-                                className={`w-full px-4 py-3 text-left text-[9px] font-black uppercase tracking-widest transition-colors ${order.status === s ? 'bg-gray-50 text-brand-dark' : 'text-gray-400 hover:bg-brand-yellow hover:text-brand-dark'}`}
-                              >
-                                {s}
-                              </button>
-                            ))}
-                         </div>
+                         {!isLocked && (
+                           <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 w-32 bg-white rounded-xl border border-gray-100 overflow-hidden opacity-0 invisible group-hover/status-list:opacity-100 group-hover/status-list:visible transition-all z-20 shadow-2xl">
+                              {['pending', 'shipped', 'delivered', 'refunded', 'cancelled', 'refund requested'].map(s => (
+                                <button 
+                                  key={s}
+                                  onClick={() => handleStatusChange(order, s)}
+                                  className={`w-full px-4 py-3 text-left text-[9px] font-black uppercase tracking-widest transition-colors ${order.status === s ? 'bg-gray-50 text-brand-dark' : 'text-gray-400 hover:bg-brand-yellow hover:text-brand-dark'}`}
+                                >
+                                  {translateStatus(s)}
+                                </button>
+                              ))}
+                           </div>
+                         )}
                        </div>
                        
                        {/* Return Tag Indicator */}
@@ -887,11 +1092,12 @@ export const AdminOrders = ({
                      </div>
                    </div>
                 </td>
-              </tr>
-            ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
-        <div className="p-6 bg-gray-50/50 border-t border-gray-100 flex justify-between items-center">
+        <div className="p-6 bg-gray-50/50 border-t border-gray-100 flex justify-between items-center rounded-b-[2.9rem]">
            <p className="text-xs font-bold text-gray-400 uppercase">Mostrando <strong className="text-brand-dark">{filteredOrders.length}</strong> di {orders.length} ordini{isAnyFilterActive ? ' (filtrati)' : ''}</p>
            <div className="flex gap-2">
               <button disabled className="px-4 py-2 bg-white border border-gray-100 rounded-xl text-[10px] font-black uppercase text-gray-300">Prec</button>
@@ -996,22 +1202,27 @@ export const AdminOrders = ({
                 <div>
                   <div className="flex items-center gap-3 mb-1">
                     <h2 className="text-3xl font-black tracking-tighter uppercase">{selectedOrder.id}</h2>
-                    <div className="relative group/status">
-                      <button className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border flex items-center gap-2 ${getStatusStyle(selectedOrder.status)}`}>
-                        {updatingOrderId === selectedOrder.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : selectedOrder.status}
-                        <ChevronDown className="w-3 h-3" />
+                    <div className={`relative ${isLockedSidebar ? '' : 'group/status'}`}>
+                      <button 
+                        disabled={isLockedSidebar}
+                        className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border flex items-center gap-2 transition-all ${isLockedSidebar ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60' : getStatusStyle(selectedOrder.status)}`}
+                      >
+                        {updatingOrderId === selectedOrder.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : translateStatus(selectedOrder.status)}
+                        {!isLockedSidebar && <ChevronDown className="w-3 h-3" />}
                       </button>
-                      <div className="absolute top-full mt-2 left-0 w-48 bg-white rounded-2xl border border-gray-100 overflow-hidden opacity-0 invisible group-hover/status:opacity-100 group-hover/status:visible transition-all z-20">
-                         {['pending', 'shipped', 'delivered', 'refunded', 'cancelled'].map(s => (
-                           <button 
-                             key={s}
-                             onClick={() => handleStatusChange(selectedOrder, s)}
-                             className="w-full px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-brand-dark hover:bg-brand-yellow transition-colors"
-                           >
-                             {s}
-                           </button>
-                         ))}
-                      </div>
+                      {!isLockedSidebar && (
+                        <div className="absolute top-full mt-2 left-0 w-48 bg-white rounded-2xl border border-gray-100 overflow-hidden opacity-0 invisible group-hover/status:opacity-100 group-hover/status:visible transition-all z-20">
+                           {['pending', 'shipped', 'delivered', 'refunded', 'cancelled'].map(s => (
+                             <button 
+                               key={s}
+                               onClick={() => handleStatusChange(selectedOrder, s)}
+                               className="w-full px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-brand-dark hover:bg-brand-yellow transition-colors"
+                             >
+                               {translateStatus(s)}
+                             </button>
+                           ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <p className="text-xs font-bold opacity-60 uppercase tracking-widest flex items-center gap-2">
@@ -1074,7 +1285,7 @@ export const AdminOrders = ({
                 )}
 
                 {/* Logistics & Carriers */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-1 border-t-2 border-gray-50">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-1 border-t-2 border-gray-50">
                   <div className="space-y-4">
                     <div className="flex items-center gap-2 text-brand-dark">
                       <Hash className="w-4 h-4" />
@@ -1134,13 +1345,43 @@ export const AdminOrders = ({
                       </div>
                     </div>
                   </div>
+
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-brand-dark">
+                      <Box className="w-4 h-4" />
+                      <h3 className="text-xs font-black uppercase tracking-widest">Peso + Imballo (Kg)</h3>
+                    </div>
+                    <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-2xl border border-gray-100 h-[58px] hover:bg-white transition-all">
+                      <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center p-1 border border-gray-100">
+                        <Box className="w-5 h-5 text-brand-dark" />
+                      </div>
+                      <span className="font-black text-sm text-brand-dark uppercase tracking-tight">
+                        {getOrderWeight(selectedOrder).toFixed(2)} kg
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Payment Info */}
                 <div className="space-y-4 pt-1 border-t-2 border-gray-50">
-                  <div className="flex items-center gap-2 text-brand-dark">
-                    <CreditCard className="w-4 h-4" />
-                    <h3 className="text-xs font-black uppercase tracking-widest">Pagamento</h3>
+                  <div className="flex items-center justify-between text-brand-dark">
+                    <div className="flex items-center gap-2">
+                      <CreditCard className="w-4 h-4" />
+                      <h3 className="text-xs font-black uppercase tracking-widest">Pagamento</h3>
+                    </div>
+                    {isSelectedBankTransfer && (
+                      <label className="inline-flex items-center gap-2 cursor-pointer group bg-orange-50 px-3 py-1.5 rounded-xl border border-orange-100 select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={!!selectedOrder.isPaid} 
+                          onChange={() => togglePaidStatus(selectedOrder.id)} 
+                          className="w-4 h-4 rounded border-gray-300 text-brand-yellow focus:ring-brand-yellow focus:ring-2 transition-all cursor-pointer accent-brand-dark" 
+                        />
+                        <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${selectedOrder.isPaid ? 'text-green-600' : 'text-orange-500 animate-pulse'}`}>
+                          {selectedOrder.isPaid ? 'PAGATO' : 'ATTESA'}
+                        </span>
+                      </label>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-2xl border border-gray-100">
                     <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center">
@@ -1382,7 +1623,7 @@ export const AdminOrders = ({
                 </td>
                 <td className="py-6 text-center">
                   <span className="text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full border border-gray-100">
-                    {o.status}
+                    {translateStatus(o.status)}
                   </span>
                 </td>
               </tr>
